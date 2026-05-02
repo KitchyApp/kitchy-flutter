@@ -1,0 +1,56 @@
+# =========================
+# GENERAL
+# =========================
+*.log
+*.tmp
+*.swp
+.DS_Store
+Thumbs.db
+
+# =========================
+# PYTHON (se misturares scripts)
+# =========================
+*.pyc
+
+# =========================
+# IDE
+# =========================
+.idea/
+*.iml
+.vscode/
+
+# =========================
+# FLUTTER / DART
+# =========================
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+.pub/
+.pub-cache/
+build/
+
+# =========================
+# ANDROID
+# =========================
+android/.gradle/
+android/app/build/
+android/local.properties
+
+# =========================
+# IOS
+# =========================
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/.last_build_id
+
+# =========================
+# GENERATED / SYMBOLS
+# =========================
+app.*.symbols
+app.*.map.json
+
+# =========================
+# OPTIONAL (REMOVE IF NEEDED)
+# =========================
+# assets/generated/
