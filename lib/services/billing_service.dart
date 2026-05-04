@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:in_app_purchase/in_app_purchase.dart';
 import '../core/api_client.dart';
 
@@ -5,69 +6,61 @@ import '../core/api_client.dart';
 /// BILLING SERVICE (PRODUCTION READY)
 /// ----------------------------------------------------------------------------
 /// Handles:
-/// - In-app purchases (Google Play)
-/// - Purchase validation with backend
-///
-/// Flow:
-/// 1. User buys product
-/// 2. Google returns purchase token
-/// 3. Token sent to backend
-/// 4. Backend validates with Google API
-/// 5. Premium activated securely
+/// - Google Play purchases
+/// - Sends purchase token to backend
+/// - Backend validates purchase securely
 ///
 /// SECURITY:
-/// - NEVER trust client purchase
-/// - ALWAYS validate server-side
+/// - Never trust client-side purchase
+/// - Always validate via backend
 /// ============================================================================
 
 class BillingService {
-  final InAppPurchase _iap = InAppPurchase.instance;
   final ApiClient apiClient;
+  final InAppPurchase _iap = InAppPurchase.instance;
 
   BillingService(this.apiClient);
 
   // ============================================================================
-  // INIT LISTENER
+  // INIT
   // ============================================================================
   Future<void> init() async {
     final available = await _iap.isAvailable();
-
     if (!available) return;
 
     _iap.purchaseStream.listen(_listenToPurchases);
   }
 
   // ============================================================================
-  // PURCHASE LISTENER
+  // LISTEN TO PURCHASES
   // ============================================================================
-  void _listenToPurchases(List<PurchaseDetails> purchases) async {
+  void _listenToPurchases(List<PurchaseDetails> purchases) {
     for (var purchase in purchases) {
       if (purchase.status == PurchaseStatus.purchased) {
-
-        final token = purchase.verificationData.serverVerificationData;
-        final productId = purchase.productID;
-
-        // 🔥 CALL BACKEND (NEW SYSTEM)
-        final success = await verifyPurchase(
-          purchaseToken: token,
-          productId: productId,
-        );
-
-        if (success) {
-          print("✅ Premium activated");
-        } else {
-          print("❌ Validation failed");
-        }
-
-        if (purchase.pendingCompletePurchase) {
-          await _iap.completePurchase(purchase);
-        }
+        _handlePurchase(purchase);
       }
     }
   }
 
   // ============================================================================
-  // VERIFY PURCHASE WITH BACKEND
+  // HANDLE PURCHASE
+  // ============================================================================
+  Future<void> _handlePurchase(PurchaseDetails purchase) async {
+    final token = purchase.verificationData.serverVerificationData;
+    final productId = purchase.productID;
+
+    await verifyPurchase(
+      purchaseToken: token,
+      productId: productId,
+    );
+
+    if (purchase.pendingCompletePurchase) {
+      await _iap.completePurchase(purchase);
+    }
+  }
+
+  // ============================================================================
+  // VERIFY WITH BACKEND
   // ============================================================================
   Future<bool> verifyPurchase({
     required String purchaseToken,
@@ -81,30 +74,23 @@ class BillingService {
       },
     );
 
-    return response.statusCode == 200;
-  }
-
-  // ============================================================================
-  // START PURCHASE FLOW
-  // ============================================================================
-  Future<void> buy(String productId) async {
-    final productDetails = await _getProducts(productId);
-
-    final purchaseParam = PurchaseParam(productDetails: productDetails);
-
-    await _iap.buyNonConsumable(purchaseParam: purchaseParam);
-  }
-
-  // ============================================================================
-  // FETCH PRODUCT FROM STORE
-  // ============================================================================
-  Future<ProductDetails> _getProducts(String productId) async {
-    final response = await _iap.queryProductDetails({productId});
-
-    if (response.productDetails.isEmpty) {
-      throw Exception("Product not found");
+    if (response.statusCode == 200) {
+      final data = jsonDecode(response.body);
+      return data['status'] == 'premium_activated';
     }
 
-    return response.productDetails.first;
+    return false;
+  }
+
+  // ============================================================================
+  // BUY PRODUCT
+  // ============================================================================
+  Future<void> buy(String productId) async {
+    final response = await _iap.queryProductDetails({productId});
+    final product = response.productDetails.first;
+
+    final purchaseParam = PurchaseParam(productDetails: product);
+
+    await _iap.buyNonConsumable(purchaseParam: purchaseParam);
   }
 }
