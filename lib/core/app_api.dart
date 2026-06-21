@@ -27,7 +27,7 @@ class AppApi {
   // GET USER STATUS
   // ============================================================================
   Future<Map<String, dynamic>> getUserStatus() async {
-    final response = await client.get('/user/status');
+    final response = await client.get('/auth/user/status');
 
     if (response.statusCode == 200) {
       return jsonDecode(response.body);
@@ -45,8 +45,10 @@ class AppApi {
     if (response.statusCode == 200) {
       final data = jsonDecode(response.body);
 
+      final recipes = data['recipes'];
+
       return List<Recipe>.from(
-        data.map((r) => Recipe.fromJson(r)),
+        recipes.map((r) => Recipe.fromJson(r)),
       );
     }
 

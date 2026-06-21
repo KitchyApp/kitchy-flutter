@@ -49,10 +49,16 @@ class BillingService {
     final token = purchase.verificationData.serverVerificationData;
     final productId = purchase.productID;
 
-    await verifyPurchase(
+    final success = await verifyPurchase(
       purchaseToken: token,
       productId: productId,
     );
+
+    if (success) {
+      print("Premium ativado!");
+    } else {
+      print("Falha na validação da compra");
+    }
 
     if (purchase.pendingCompletePurchase) {
       await _iap.completePurchase(purchase);

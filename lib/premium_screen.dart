@@ -1,10 +1,10 @@
 import 'package:flutter/material.dart';
-import 'services/billing_service.dart';
-
-final billing = BillingService();
+import 'main.dart';
 
 class PremiumScreen extends StatelessWidget {
-  const PremiumScreen({super.key});
+  PremiumScreen({super.key});
+
+  final billing = billingService;
 
   @override
   Widget build(BuildContext context) {

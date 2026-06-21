@@ -1,6 +1,6 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
-import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 /// ============================================================================
 /// API CLIENT (PRODUCTION READY)
@@ -20,8 +20,12 @@ import 'package:shared_preferences/shared_preferences.dart';
 class ApiClient {
   final String baseUrl;
 
+  static const storage = FlutterSecureStorage();
+
   String? accessToken;
   String? refreshToken;
+
+  bool get hasToken => accessToken != null && accessToken!.isNotEmpty;
 
   ApiClient({required this.baseUrl});
 
@@ -29,10 +33,14 @@ class ApiClient {
   // INIT
   // ============================================================================
   Future<void> init() async {
-    final prefs = await SharedPreferences.getInstance();
+    accessToken = await storage.read(
+      key: 'access_token',
+    );
 
-    accessToken = prefs.getString('access_token');
-    refreshToken = prefs.getString('refresh_token');
+    refreshToken = await storage.read(
+      key: 'refresh_token',
+    );
+
   }
 
   // ============================================================================
@@ -45,10 +53,15 @@ class ApiClient {
     accessToken = access;
     refreshToken = refresh;
 
-    final prefs = await SharedPreferences.getInstance();
+    await storage.write(
+      key: 'access_token',
+      value: access,
+    );
 
-    await prefs.setString('access_token', access);
-    await prefs.setString('refresh_token', refresh);
+    await storage.write(
+      key: 'refresh_token',
+      value:refresh,
+    );
   }
 
   // ============================================================================
@@ -58,10 +71,13 @@ class ApiClient {
     accessToken = null;
     refreshToken = null;
 
-    final prefs = await SharedPreferences.getInstance();
+    await storage.delete(
+      key: 'access_token',
+    );
 
-    await prefs.remove('access_token');
-    await prefs.remove('refresh_token');
+    await storage.delete(
+      key: 'refresh_token',
+    );
   }
 
   // ============================================================================
@@ -93,7 +109,14 @@ class ApiClient {
         headers: requestHeaders,
         body: jsonEncode(body),
       );
-    } else {
+    }
+    else if (method == 'DELETE') {
+      response = await http.delete(
+        uri,
+        headers: requestHeaders,
+      );
+    }
+    else {
       throw Exception('Unsupported HTTP method');
     }
 
@@ -158,6 +181,10 @@ class ApiClient {
 
   Future<http.Response> post(String endpoint, Object body) {
     return _request('POST', endpoint, body: body);
+  }
+
+  Future<http.Response> delete(String endpoint) {
+    return _request('DELETE', endpoint);
   }
 
   // ============================================================================

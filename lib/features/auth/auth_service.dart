@@ -1,47 +1,39 @@
 import 'dart:convert';
-import 'package:shared_preferences/shared_preferences.dart';
-import '../../core/api_client.dart';
 
-/// ============================================================================
-/// AUTH SERVICE
-/// ----------------------------------------------------------------------------
-/// Centralizes all authentication logic.
-///
-/// Responsibilities:
-/// - Login (API call)
-/// - Token persistence
-/// - Session restoration (auto-login)
-/// - Logout
-///
-/// Architecture:
-/// - Keeps UI clean (no business logic in widgets)
-/// - Delegates HTTP to ApiClient
-/// - Uses SharedPreferences for local persistence
-///
-/// Security:
-/// - Tokens are stored locally (for now)
-/// - Ready for future secure storage upgrade (FlutterSecureStorage)
-/// ============================================================================
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+import '../../core/api_client.dart';
 
 class AuthService {
   final ApiClient apiClient;
 
   AuthService(this.apiClient);
 
+  static const storage = FlutterSecureStorage();
+
+  // ============================================================================
+  // REGISTER
+  // ============================================================================
+
+  Future<bool> register({
+    required String email,
+    required String password,
+  }) async {
+    final response = await apiClient.post(
+      '/auth/register',
+      {
+        'email': email,
+        'password': password,
+      },
+    );
+
+    return response.statusCode == 200;
+  }
+
   // ============================================================================
   // LOGIN
   // ============================================================================
-  /// Authenticates user against backend.
-  ///
-  /// Flow:
-  /// 1. Sends credentials to API
-  /// 2. Receives access + refresh tokens
-  /// 3. Persists tokens locally
-  /// 4. Updates ApiClient state
-  ///
-  /// Returns:
-  /// - true if login successful
-  /// - false otherwise
+
   Future<bool> login({
     required String email,
     required String password,
@@ -54,44 +46,59 @@ class AuthService {
       },
     );
 
-    if (response.statusCode == 200) {
-      final data = jsonDecode(response.body);
-
-      await apiClient.setTokens(
-        access: data['access_token'],
-        refresh: data['refresh_token'],
-      );
-
-      return true;
+    if (response.statusCode != 200) {
+      return false;
     }
 
-    return false;
+    final data = jsonDecode(response.body);
+
+    await saveTokens(
+      access: data['access_token'],
+      refresh: data['refresh_token'],
+    );
+
+    return true;
   }
 
   // ============================================================================
-  // LOAD SESSION (AUTO LOGIN)
+  // SAVE TOKENS
   // ============================================================================
-  /// Restores user session from local storage.
-  ///
-  /// Use case:
-  /// - App startup
-  /// - Avoid forcing user to login again
-  ///
-  /// Flow:
-  /// 1. Reads tokens from SharedPreferences
-  /// 2. If present → inject into ApiClient
-  ///
-  /// IMPORTANT:
-  /// - Does NOT validate token with backend
-  /// - Interceptor will handle expiration automatically
-  Future<void> loadSession() async {
-    final prefs = await SharedPreferences.getInstance();
 
-    final access = prefs.getString('access_token');
-    final refresh = prefs.getString('refresh_token');
+  Future<void> saveTokens({
+    required String access,
+    required String refresh,
+  }) async {
+    await storage.write(
+      key: 'access_token',
+      value: access,
+    );
+
+    await storage.write(
+      key: 'refresh_token',
+      value: refresh,
+    );
+
+    await apiClient.setTokens(
+      access: access,
+      refresh: refresh,
+    );
+  }
+
+  // ============================================================================
+  // AUTO LOGIN
+  // ============================================================================
+
+  Future<void> loadSession() async {
+    final access = await storage.read(
+      key: 'access_token',
+    );
+
+    final refresh = await storage.read(
+      key: 'refresh_token',
+    );
 
     if (access != null && refresh != null) {
-      apiClient.setTokens(
+      await apiClient.setTokens(
         access: access,
         refresh: refresh,
       );
@@ -99,26 +106,60 @@ class AuthService {
   }
 
   // ============================================================================
+  // REFRESH TOKEN
+  // ============================================================================
+
+  Future<bool> refreshToken() async {
+    final refresh =
+    await storage.read(key: 'refresh_token');
+
+    if (refresh == null) {
+      return false;
+    }
+
+    final response = await apiClient.post(
+      '/auth/refresh',
+      {
+        'refresh_token': refresh,
+      },
+    );
+
+    if (response.statusCode != 200) {
+      return false;
+    }
+
+    final data = jsonDecode(response.body);
+
+    await saveTokens(
+      access: data['access_token'],
+      refresh: data['refresh_token'],
+    );
+
+    return true;
+  }
+
+  // ============================================================================
   // LOGOUT
   // ============================================================================
-  /// Clears user session completely.
-  ///
-  /// Flow:
-  /// 1. Remove tokens from local storage
-  /// 2. Reset ApiClient state
-  ///
-  /// Result:
-  /// - User is fully logged out
-  /// - Requires new login
+
   Future<void> logout() async {
-    final prefs = await SharedPreferences.getInstance();
+    await storage.deleteAll();
 
-    await prefs.remove('access_token');
-    await prefs.remove('refresh_token');
-
-    apiClient.setTokens(
+    await apiClient.setTokens(
       access: '',
       refresh: '',
     );
+  }
+
+  // ============================================================================
+  // CHECK LOGIN
+  // ============================================================================
+
+  Future<bool> isLoggedIn() async {
+    final token = await storage.read(
+      key: 'access_token',
+    );
+
+    return token != null;
   }
 }
