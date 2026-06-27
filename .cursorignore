@@ -1,0 +1,15 @@
+# === PASTAS PESADAS DO FLUTTER / ANDROID / IOS ===
+.dart_tool/
+.packages
+.pub-cache/
+.pub/
+build/
+android/app/build/
+ios/Flutter/
+.ios/
+.android/
+
+# === CONFIGURAÇÕES IDE ===
+.idea/
+.vscode/
+*.iml
