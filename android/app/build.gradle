@@ -48,11 +48,29 @@ android {
         targetSdkVersion flutter.targetSdkVersion
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
+
+        // Explicit ABI filters ensure the native Flutter engine libraries
+        // are compiled and packaged for every architecture we target.
+        // x86_64 is required for the Android emulator (AVD) on modern Macs
+        // and Windows PCs. Without it, the release APK falls back to a
+        // translated arm64 binary via Android's emulation layer, which can
+        // mis-render native input widgets and crash.
+        ndk {
+            abiFilters "arm64-v8a", "armeabi-v7a", "x86_64", "x86"
+        }
     }
 
     buildTypes {
         release {
             signingConfig signingConfigs.debug
+
+            // minifyEnabled and shrinkResources are OFF by default so the app
+            // builds quickly while in development. Enable them before publishing
+            // to the Play Store to reduce APK size.
+            // When enabled, proguard-rules.pro keeps all Flutter plugin classes.
+            minifyEnabled false
+            shrinkResources false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 }

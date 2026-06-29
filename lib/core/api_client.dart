@@ -25,7 +25,13 @@ class ApiClient {
   String? accessToken;
   String? refreshToken;
 
-  bool get hasToken => accessToken != null && accessToken!.isNotEmpty;
+  // Both tokens must be present — access token alone is insufficient because
+  // a missing refresh token means the 401 interceptor cannot recover the session.
+  bool get hasToken =>
+      accessToken != null &&
+      accessToken!.isNotEmpty &&
+      refreshToken != null &&
+      refreshToken!.isNotEmpty;
 
   ApiClient({required this.baseUrl});
 

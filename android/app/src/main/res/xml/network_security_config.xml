@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    Network Security Configuration
+    ================================
+    Defines cleartext (HTTP) traffic policy for ALL build types.
+
+    Policy:
+    - Default: cleartext BLOCKED (same as usesCleartextTraffic="false")
+    - 10.0.2.2: cleartext ALLOWED — this is the Android emulator's alias
+      for the host machine's localhost. Only reachable inside the emulator,
+      so allowing HTTP here does not open any security risk in production.
+
+    Why this file instead of usesCleartextTraffic in the manifest:
+    - usesCleartextTraffic is all-or-nothing (all domains or none)
+    - networkSecurityConfig allows per-domain rules
+    - This lets us reach http://10.0.2.2:8000 in release builds on the
+      emulator while keeping all other traffic HTTPS-only
+-->
+<network-security-config>
+
+    <!-- Block cleartext globally -->
+    <base-config cleartextTrafficPermitted="false"/>
+
+    <!-- Allow cleartext only for the emulator dev server -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+    </domain-config>
+
+</network-security-config>
