@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'package:share_plus/share_plus.dart';
 
 import 'core/app_api.dart';
 import 'models/recipe.dart';
@@ -172,23 +173,28 @@ class _HomePageState extends State<HomePage> {
   //  - Never use "as bool" hard cast — use == true to survive null fields
   //  - Always check mounted before setState (called from initState fire-and-forget)
   //  - Catch (e, stack) to log the full trace — never let status failures crash
-  Future<void> loadUserStatus() async {
+  // Returns the raw status map on success, null on any error.
+  // Callers that don't need the map (initState, generateFromText, uploadImage)
+  // simply ignore the return value — no call-site changes required.
+  Future<Map<String, dynamic>?> loadUserStatus() async {
     try {
       final response = await appApi.getUserStatus();
 
       // mounted must be checked after every await before any setState
-      if (!mounted) return;
+      if (!mounted) return null;
 
       // Defensive read: "== true" survives null, int, String, or any
       // unexpected type that a "as bool" hard cast would crash on in AOT.
       final bool premium = response['is_premium'] == true;
 
       setState(() => isPremiumUser = premium);
+      return response;
     } catch (e, stack) {
       // Never crash the app if status fetch fails.
       // Default stays false (free tier) which is the safe fallback.
       debugPrint('[UserStatus] Erro ao obter status: $e');
       debugPrint('[UserStatus] Stack: $stack');
+      return null;
     }
   }
 
@@ -205,6 +211,65 @@ class _HomePageState extends State<HomePage> {
     await Future.delayed(const Duration(seconds: 2));
     if (!mounted) return;
     setState(() => loadingMessage = "Quase pronto...");
+  }
+
+  // ============================================================================
+  // SANDBOX BILLING TEST
+  // ============================================================================
+  Future<void> _testSandboxBilling() async {
+    if (!mounted) return;
+    setState(() {
+      isLoading = true;
+      loadingMessage = "A processar compra Sandbox...";
+    });
+
+    try {
+      final success = await billingService.purchasePremiumMock();
+
+      if (!mounted) return;
+
+      if (success) {
+        // loadUserStatus() returns the raw map so we can do a second, explicit
+        // setState here — this guarantees a redraw even if Flutter batched the
+        // internal setState inside loadUserStatus() with an earlier frame.
+        final status = await loadUserStatus();
+        if (!mounted) return;
+
+        setState(() {
+          // Defensive reads matching the AOT safety rules in loadUserStatus().
+          isPremiumUser = status?['is_premium'] == true;
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Sandbox: Conta atualizada para Premium!"),
+            backgroundColor: Color(0xFF4CAF50),
+            duration: Duration(seconds: 4),
+          ),
+        );
+      } else {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Falha na verificação Sandbox. Verifica os logs."),
+            backgroundColor: Colors.red,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      }
+    } catch (e, stack) {
+      debugPrint('[Sandbox] Erro: $e');
+      debugPrint('[Sandbox] Stack: $stack');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text("Erro inesperado: $e"),
+          backgroundColor: Colors.red[700],
+          duration: const Duration(seconds: 6),
+        ),
+      );
+    } finally {
+      if (mounted) setState(() => isLoading = false);
+    }
   }
 
   // ============================================================================
@@ -355,31 +420,38 @@ class _HomePageState extends State<HomePage> {
   }
 
   void _showLimitDialog() {
+    // Fire-and-forget — unawaited intentionally; analytics must never delay
+    // the dialog appearing. The try-catch inside logEvent absorbs any error.
+    appApi.logEvent(
+      'paywall_displayed',
+      metadata: {
+        'plan': isPremiumUser ? 'premium' : 'free',
+        'trigger': 'limit_403',
+      },
+    );
+
     showDialog(
       context: context,
       builder: (_) => AlertDialog(
-        title: const Text("Limite atingido"),
+        title: const Text("Limite Diário Atingido 🍽️"),
         content: Text(
           isPremiumUser
               ? "Atingiste o limite de análises de hoje (4). Volta amanhã!"
-              : "Já usaste a tua análise gratuita de hoje.\nFaz upgrade para Premium e analisa até 4 vezes por dia!",
+              : "Esgotaste as tuas receitas para hoje. Torna-te Premium para gerar até 4 receitas por dia!",
         ),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context),
-            child: const Text("OK"),
+            child: const Text("Fechar"),
           ),
           if (!isPremiumUser)
             ElevatedButton(
-              onPressed: () async {
+              onPressed: () {
+                // Close the dialog first, then trigger the sandbox billing flow.
                 Navigator.pop(context);
-                final result = await Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (_) => PremiumScreen()),
-                );
-                if (result == true) await loadUserStatus();
+                _testSandboxBilling();
               },
-              child: const Text("Ir para Premium"),
+              child: const Text("Quero ser Premium"),
             ),
         ],
       ),
@@ -516,6 +588,18 @@ class _HomePageState extends State<HomePage> {
                   ElevatedButton(
                     onPressed: isLoading ? null : takePhoto,
                     child: const Text("Fotografar ingredientes"),
+                  ),
+
+                  const SizedBox(height: 12),
+
+                  ElevatedButton.icon(
+                    onPressed: isLoading ? null : _testSandboxBilling,
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.amber[700],
+                      foregroundColor: Colors.white,
+                    ),
+                    icon: const Icon(Icons.science_outlined),
+                    label: const Text("Testar Upgrade Premium (Sandbox)"),
                   ),
 
                   const SizedBox(height: 20),
@@ -696,8 +780,22 @@ class RecipeDetailScreen extends StatelessWidget {
           ),
 
           IconButton(
-            onPressed: () {},
+            onPressed: () {
+              // Log intent before opening the share sheet.
+              // Fire-and-forget — never awaited so the sheet opens instantly.
+              appApi.logEvent(
+                'share_triggered',
+                metadata: {
+                  'source': 'recipe_detail',
+                  'recipe_title': recipe.title,
+                },
+              );
+              SharePlus.instance.share(
+                ShareParams(text: recipe.toShareText()),
+              );
+            },
             icon: const Icon(Icons.share),
+            tooltip: "Partilhar receita",
           ),
         ],
       ),

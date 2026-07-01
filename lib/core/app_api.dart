@@ -134,4 +134,38 @@ class AppApi {
 
     throw Exception('Image upload failed: ${response.statusCode}');
   }
+
+  // ============================================================================
+  // LOG ANALYTICS EVENT  →  POST /analytics/log
+  // ============================================================================
+  // Fire-and-forget: always returns void, NEVER throws.
+  //
+  // Design rules:
+  //  - The entire body is wrapped in try-catch — a network failure, 404, or
+  //    any other error is silently swallowed so analytics never interrupts
+  //    the main user experience.
+  //  - The caller must NOT await this method (use it as unawaited fire-and-
+  //    forget). Awaiting would block the UI thread until the server responds.
+  //  - metadata is optional; omit it for events with no extra context.
+  //
+  // Usage:
+  //   appApi.logEvent('paywall_displayed', metadata: {'plan': 'free'});
+  //   appApi.logEvent('share_triggered',   metadata: {'source': 'recipe_detail'});
+  Future<void> logEvent(
+    String eventName, {
+    Map<String, dynamic>? metadata,
+  }) async {
+    try {
+      await client.post(
+        '/analytics/log',
+        {
+          'event_name': eventName,
+          if (metadata != null && metadata.isNotEmpty) 'metadata': metadata,
+        },
+      );
+    } catch (e) {
+      // Intentionally silent: analytics errors must never surface to the user.
+      debugPrint('[AppApi.logEvent] Falha ao registar "$eventName": $e');
+    }
+  }
 }

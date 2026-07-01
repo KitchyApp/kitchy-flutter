@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 import '../models/recipe.dart';
 import 'dart:ui';
 
@@ -46,9 +47,28 @@ class RecipeCardPremium extends StatelessWidget {
                   ),
                 ),
                 const SizedBox(height: 8),
-                Text(
-                  "${recipe.calories} kcal | P:${recipe.protein} C:${recipe.carbs} F:${recipe.fat}",
-                  style: const TextStyle(fontSize: 14),
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        "${recipe.calories} kcal | P:${recipe.protein} C:${recipe.carbs} F:${recipe.fat}",
+                        style: const TextStyle(fontSize: 14),
+                      ),
+                    ),
+                    IconButton(
+                      onPressed: () => SharePlus.instance.share(
+                        ShareParams(text: recipe.toShareText()),
+                      ),
+                      icon: const Icon(
+                        Icons.share,
+                        color: Color(0xFFFF7043),
+                        size: 20,
+                      ),
+                      tooltip: "Partilhar receita",
+                      padding: EdgeInsets.zero,
+                      constraints: const BoxConstraints(),
+                    ),
+                  ],
                 ),
               ],
             ),

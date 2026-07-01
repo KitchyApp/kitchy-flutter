@@ -91,4 +91,20 @@ class Recipe {
       'is_premium': isPremium,
     };
   }
+
+  // Formats the recipe as a human-readable share text.
+  // Used by both RecipeCardPremium and RecipeDetailScreen via share_plus.
+  String toShareText() {
+    final numberedSteps = steps
+        .asMap()
+        .entries
+        .map((e) => '${e.key + 1}. ${e.value}')
+        .join('\n');
+
+    return '🍽️ $title\n\n'
+        '⏱️ $timeMinutes min  •  🔥 $calories kcal\n'
+        '💪 P: ${protein}g  |  🌾 C: ${carbs}g  |  🥑 G: ${fat}g\n\n'
+        '📋 Modo de Preparo:\n$numberedSteps\n\n'
+        'Gerado com Kitchy 🤖';
+  }
 }
