@@ -13,7 +13,12 @@ import 'screens/login_screen.dart';
 import 'core/api_client.dart';
 import 'features/auth/auth_service.dart';
 import 'services/billing_service.dart';
+import 'services/notification_service.dart';
 import 'screens/favorites_screen.dart';
+import 'screens/onboarding_screen.dart';
+import 'screens/paywall_screen.dart';
+import 'screens/profile_screen.dart';
+import 'screens/profile_settings_screen.dart';
 
 const String baseUrl = "http://10.0.2.2:8000";
 
@@ -33,35 +38,50 @@ void main() async {
   // plugin that accesses platform channels during initialisation.
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Decide the start screen here, inside try-catch, so any SecureStorage /
-  // Keystore failure is caught before runApp() is called.
-  // Routing must NOT happen inside MyApp.build() — at that point there is no
+  // Initialize local notifications plugin + timezone database.
+  // Must run after ensureInitialized() and before runApp() so the plugin's
+  // platform channel is ready before any widget tree is built.
+  await NotificationService.initialize();
+
+  // ── Start-screen resolution (inside try-catch — see comment below) ──────────
+  // Routing must NOT happen inside MyApp.build(): at that point there is no
   // try-catch context and an uncaught exception silently kills the process.
   Widget startScreen = const LoginScreen();
 
   try {
-    // Single point of session restoration.
-    // authService.loadSession() reads both tokens from FlutterSecureStorage
-    // and sets them in apiClient via apiClient.setTokens() — so apiClient.init()
-    // is not needed and has been removed to avoid a redundant double-read.
-    await authService.loadSession();
+    // ── Step 1: Onboarding gate ─────────────────────────────────────────────
+    // The flag is written by OnboardingScreen on completion and lives in the
+    // same FlutterSecureStorage instance used by ApiClient for tokens.
+    // We read it BEFORE restoring the session so first-time users always see
+    // the onboarding regardless of any stale token state.
+    final seenOnboarding = await ApiClient.storage.read(
+      key: 'has_seen_onboarding',
+    );
 
-    startScreen =
-        apiClient.hasToken ? const HomePage() : const LoginScreen();
+    if (seenOnboarding != 'true') {
+      // First launch (or reinstall that wiped the Keystore).
+      // Skip session restoration entirely — user must onboard first.
+      startScreen = const OnboardingScreen();
+    } else {
+      // ── Step 2: Session restoration (returning users) ───────────────────
+      // authService.loadSession() reads both tokens from FlutterSecureStorage
+      // and sets them in apiClient via apiClient.setTokens().
+      await authService.loadSession();
+
+      startScreen =
+          apiClient.hasToken ? const HomePage() : const LoginScreen();
+    }
   } catch (e, stack) {
     // FlutterSecureStorage throws PlatformException on Android when the
     // Keystore has data from a previous install that the new install cannot
     // decrypt (common during development / reinstalls).
-    // We catch it, wipe the corrupt tokens, and fall back to LoginScreen
-    // instead of crashing with "Lost connection to device".
+    // We catch it, wipe the corrupt tokens, and fall back to LoginScreen.
     debugPrint('[INIT] Falha ao restaurar sessão: $e');
     debugPrint('[INIT] $stack');
 
     try {
       await apiClient.clearTokens();
     } catch (clearError) {
-      // clearTokens() itself can fail if the Keystore is fully inaccessible.
-      // Ignore — we are already going to LoginScreen.
       debugPrint('[INIT] Não foi possível limpar tokens: $clearError');
     }
 
@@ -154,7 +174,29 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    loadUserStatus();
+    _initHomeState();
+  }
+
+  // Chains loadUserStatus → manageAppNotifications in the correct order.
+  // Both are awaited so notifications are always configured with the real
+  // plan value — never with the default isPremiumUser=false before the
+  // server responds.
+  Future<void> _initHomeState() async {
+    final status = await loadUserStatus();
+
+    // mounted must be checked after every await — the user may have navigated
+    // away while the HTTP request was in flight.
+    if (!mounted) return;
+
+    final bool premium = status?['is_premium'] == true;
+
+    // Apply notification policy immediately after plan is confirmed:
+    //   premium → cancel all reminders (never bother paying customers)
+    //   free    → schedule 3-day retention reminder at 19:00
+    //
+    // Fire-and-forget: notification scheduling is a background operation and
+    // must never block the UI. Errors are swallowed inside manageAppNotifications.
+    NotificationService.manageAppNotifications(premium);
   }
 
   @override
@@ -214,62 +256,64 @@ class _HomePageState extends State<HomePage> {
   }
 
   // ============================================================================
-  // SANDBOX BILLING TEST
+  // OPEN PAYWALL
   // ============================================================================
-  Future<void> _testSandboxBilling() async {
+  // Single entry-point for showing the upgrade screen.
+  //
+  //  fromLimit = true  → triggered by a 403 quota block
+  //  fromLimit = false → triggered manually ("Ver Planos" button)
+  //
+  // For premium users who already hit their 4-per-day limit, there is nothing
+  // to upgrade — show a plain SnackBar instead of the paywall.
+  Future<void> _openPaywall({bool fromLimit = false}) async {
     if (!mounted) return;
-    setState(() {
-      isLoading = true;
-      loadingMessage = "A processar compra Sandbox...";
-    });
 
-    try {
-      final success = await billingService.purchasePremiumMock();
-
-      if (!mounted) return;
-
-      if (success) {
-        // loadUserStatus() returns the raw map so we can do a second, explicit
-        // setState here — this guarantees a redraw even if Flutter batched the
-        // internal setState inside loadUserStatus() with an earlier frame.
-        final status = await loadUserStatus();
-        if (!mounted) return;
-
-        setState(() {
-          // Defensive reads matching the AOT safety rules in loadUserStatus().
-          isPremiumUser = status?['is_premium'] == true;
-        });
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Sandbox: Conta atualizada para Premium!"),
-            backgroundColor: Color(0xFF4CAF50),
-            duration: Duration(seconds: 4),
-          ),
-        );
-      } else {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text("Falha na verificação Sandbox. Verifica os logs."),
-            backgroundColor: Colors.red,
-            duration: Duration(seconds: 4),
-          ),
-        );
-      }
-    } catch (e, stack) {
-      debugPrint('[Sandbox] Erro: $e');
-      debugPrint('[Sandbox] Stack: $stack');
-      if (!mounted) return;
+    if (isPremiumUser && fromLimit) {
+      // Already on premium plan — just inform the user about the daily limit.
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text("Erro inesperado: $e"),
-          backgroundColor: Colors.red[700],
-          duration: const Duration(seconds: 6),
+        const SnackBar(
+          content: Text(
+              "Limite diário de 4 receitas atingido. Volta amanhã! 🍽️"),
+          backgroundColor: Color(0xFFFF7043),
+          duration: Duration(seconds: 4),
         ),
       );
-    } finally {
-      if (mounted) setState(() => isLoading = false);
+      return;
     }
+
+    // Log analytics before opening the screen (fire-and-forget).
+    appApi.logEvent(
+      'paywall_displayed',
+      metadata: {
+        'plan': isPremiumUser ? 'premium' : 'free',
+        'trigger': fromLimit ? 'limit_403' : 'manual',
+      },
+    );
+
+    await Navigator.push<bool>(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PaywallScreen(
+          billingService: billingService,
+          // After a successful purchase the PaywallScreen calls this callback
+          // before popping, so the HomePage state is updated the moment the
+          // user returns — no extra refresh step needed.
+          onPurchaseSuccess: () async {
+            final status = await loadUserStatus();
+            if (!mounted) return;
+            setState(() {
+              isPremiumUser = status?['is_premium'] == true;
+            });
+
+            // Cancel all scheduled notifications the instant premium is
+            // confirmed — before the UI even finishes updating.
+            // We pass true directly rather than reading isPremiumUser from
+            // state because setState above may not have flushed yet.
+            NotificationService.manageAppNotifications(true);
+          },
+        ),
+      ),
+    );
   }
 
   // ============================================================================
@@ -289,19 +333,30 @@ class _HomePageState extends State<HomePage> {
       return;
     }
 
-    // ── Start loading ────────────────────────────────────────────────────────
+    // ── Phase 1: Ad slot (before the API call) ───────────────────────────────
+    // Free users see "A carregar anúncio..." for 3 s while the interstitial
+    // plays (or is simulated). Premium users see the normal message instantly.
     if (!mounted) return;
     setState(() {
       isLoading = true;
-      loadingMessage = "A gerar receitas com IA...";
+      loadingMessage =
+          isPremiumUser ? "A gerar receitas com IA..." : "A carregar anúncio...";
       responseText = "";
       recipes = [];
     });
 
+    // Await the ad — premium returns in < 1 ms, free waits 3 s.
+    await AdsService.showInterstitialAdIfNeeded(isPremiumUser);
+
+    // ── Phase 2: API call ────────────────────────────────────────────────────
+    // Update the message now that the ad slot is over, then fire the animation
+    // and the HTTP request in parallel.
+    if (!mounted) return;
+    setState(() => loadingMessage = "A gerar receitas com IA...");
+
     // Fire-and-forget animation — mounted checks are inside _startLoadingAnimation
     _startLoadingAnimation();
 
-    // ── API call ─────────────────────────────────────────────────────────────
     try {
       final data = await appApi.generateRecipesFromText(ingredients);
 
@@ -324,15 +379,13 @@ class _HomePageState extends State<HomePage> {
         recipes = parsed;
       });
 
+      // Refresh plan status after generation (quota counter may have changed).
       await loadUserStatus();
-
-      if (!mounted) return;
-      if (!isPremiumUser) AdsService.showInterstitial();
 
     } on DailyLimitExceededException {
       if (!mounted) return;
       setState(() => isLoading = false);
-      _showLimitDialog();
+      _openPaywall(fromLimit: true);
 
     } catch (e, stack) {
       debugPrint('[generateFromText] Erro: $e');
@@ -365,12 +418,23 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> uploadImage(String path) async {
+    // ── Phase 1: Ad slot (before the API call) ───────────────────────────────
+    // Same pattern as generateFromText: Free users wait 3 s on the ad overlay,
+    // Premium users skip straight to the camera analysis message.
     if (!mounted) return;
     setState(() {
       isLoading = true;
-      loadingMessage = "A analisar ingredientes...";
+      loadingMessage =
+          isPremiumUser ? "A analisar ingredientes..." : "A carregar anúncio...";
       responseText = "";
     });
+
+    // Await the ad — premium returns in < 1 ms, free waits 3 s.
+    await AdsService.showInterstitialAdIfNeeded(isPremiumUser);
+
+    // ── Phase 2: API call ────────────────────────────────────────────────────
+    if (!mounted) return;
+    setState(() => loadingMessage = "A analisar ingredientes...");
 
     // Fire-and-forget animation — mounted checks are inside _startLoadingAnimation
     _startLoadingAnimation();
@@ -391,15 +455,13 @@ class _HomePageState extends State<HomePage> {
         recipes = parsed;
       });
 
+      // Refresh plan status after generation (quota counter may have changed).
       await loadUserStatus();
-
-      if (!mounted) return;
-      if (!isPremiumUser) AdsService.showInterstitial();
 
     } on DailyLimitExceededException {
       if (!mounted) return;
       setState(() => isLoading = false);
-      _showLimitDialog();
+      _openPaywall(fromLimit: true);
 
     } catch (e, stack) {
       debugPrint('[uploadImage] Erro: $e');
@@ -419,48 +481,9 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  void _showLimitDialog() {
-    // Fire-and-forget — unawaited intentionally; analytics must never delay
-    // the dialog appearing. The try-catch inside logEvent absorbs any error.
-    appApi.logEvent(
-      'paywall_displayed',
-      metadata: {
-        'plan': isPremiumUser ? 'premium' : 'free',
-        'trigger': 'limit_403',
-      },
-    );
-
-    showDialog(
-      context: context,
-      builder: (_) => AlertDialog(
-        title: const Text("Limite Diário Atingido 🍽️"),
-        content: Text(
-          isPremiumUser
-              ? "Atingiste o limite de análises de hoje (4). Volta amanhã!"
-              : "Esgotaste as tuas receitas para hoje. Torna-te Premium para gerar até 4 receitas por dia!",
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(context),
-            child: const Text("Fechar"),
-          ),
-          if (!isPremiumUser)
-            ElevatedButton(
-              onPressed: () {
-                // Close the dialog first, then trigger the sandbox billing flow.
-                Navigator.pop(context);
-                _testSandboxBilling();
-              },
-              child: const Text("Quero ser Premium"),
-            ),
-        ],
-      ),
-    );
-  }
-
-  // Daily limit is enforced exclusively by the backend (/analyze-image/).
-  // The backend returns 403 when the limit is reached, which uploadImage()
-  // catches and converts to a _showLimitDialog() call.
+  // Daily limit is enforced exclusively by the backend (/generate-recipes/ and /analyze-image/).
+  // The backend returns 403 when the limit is reached, which both endpoints
+  // catch as DailyLimitExceededException and forward to _openPaywall().
   // There is no local counter — the server's analyses_today is the
   // single source of truth.
 
@@ -479,6 +502,18 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         title: const Text("Kitchy"),
         actions: [
+          IconButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const ProfileScreen(),
+                ),
+              );
+            },
+            icon: const Icon(Icons.person),
+            tooltip: 'Perfil',
+          ),
           IconButton(
             onPressed: () {
               Navigator.push(
@@ -593,13 +628,9 @@ class _HomePageState extends State<HomePage> {
                   const SizedBox(height: 12),
 
                   ElevatedButton.icon(
-                    onPressed: isLoading ? null : _testSandboxBilling,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.amber[700],
-                      foregroundColor: Colors.white,
-                    ),
-                    icon: const Icon(Icons.science_outlined),
-                    label: const Text("Testar Upgrade Premium (Sandbox)"),
+                    onPressed: isLoading ? null : _openPaywall,
+                    icon: const Icon(Icons.workspace_premium),
+                    label: const Text("Ver Planos Premium"),
                   ),
 
                   const SizedBox(height: 20),

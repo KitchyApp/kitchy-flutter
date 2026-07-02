@@ -136,6 +136,65 @@ class AppApi {
   }
 
   // ============================================================================
+  // GET PREFERENCES  →  GET /preferences
+  // ============================================================================
+  // Returns the current dietary preferences of the logged-in user:
+  //   { dietary_gluten_free, dietary_vegetarian, dietary_vegan, preferred_cuisine }
+  Future<Map<String, dynamic>> getPreferences() async {
+    final response = await client.get('/preferences');
+
+    if (response.statusCode == 200) {
+      final dynamic decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) return decoded;
+      return {
+        'dietary_gluten_free': false,
+        'dietary_vegetarian': false,
+        'dietary_vegan': false,
+        'preferred_cuisine': 'international',
+      };
+    }
+
+    throw Exception(
+      'Falha ao obter preferências: HTTP ${response.statusCode}',
+    );
+  }
+
+  // ============================================================================
+  // UPDATE PREFERENCES  →  PUT /update-preferences
+  // ============================================================================
+  // Sends the user's dietary preferences to the backend, which persists them
+  // in the User table and applies them on every subsequent recipe generation.
+  //
+  // Returns the saved preferences map on success.
+  // Throws on any non-200 response so the caller can show an error message.
+  Future<Map<String, dynamic>> updatePreferences({
+    required bool glutenFree,
+    required bool vegetarian,
+    required bool vegan,
+    required String preferredCuisine,
+  }) async {
+    final response = await client.put(
+      '/update-preferences',
+      {
+        'dietary_gluten_free': glutenFree,
+        'dietary_vegetarian': vegetarian,
+        'dietary_vegan': vegan,
+        'preferred_cuisine': preferredCuisine,
+      },
+    );
+
+    if (response.statusCode == 200) {
+      final dynamic decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) return decoded;
+      return {};
+    }
+
+    throw Exception(
+      'Falha ao guardar preferências: HTTP ${response.statusCode} — ${response.body}',
+    );
+  }
+
+  // ============================================================================
   // LOG ANALYTICS EVENT  →  POST /analytics/log
   // ============================================================================
   // Fire-and-forget: always returns void, NEVER throws.

@@ -115,14 +115,18 @@ class ApiClient {
         headers: requestHeaders,
         body: jsonEncode(body),
       );
-    }
-    else if (method == 'DELETE') {
+    } else if (method == 'PUT') {
+      response = await http.put(
+        uri,
+        headers: requestHeaders,
+        body: jsonEncode(body),
+      );
+    } else if (method == 'DELETE') {
       response = await http.delete(
         uri,
         headers: requestHeaders,
       );
-    }
-    else {
+    } else {
       throw Exception('Unsupported HTTP method');
     }
 
@@ -187,6 +191,10 @@ class ApiClient {
 
   Future<http.Response> post(String endpoint, Object body) {
     return _request('POST', endpoint, body: body);
+  }
+
+  Future<http.Response> put(String endpoint, Object body) {
+    return _request('PUT', endpoint, body: body);
   }
 
   Future<http.Response> delete(String endpoint) {

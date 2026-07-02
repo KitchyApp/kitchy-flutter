@@ -91,7 +91,9 @@ class BillingService {
   // ============================================================================
   // MOCK PURCHASE (sandbox — bypasses Google Play plugin)
   // ============================================================================
-  Future<bool> purchasePremiumMock() async {
+  Future<bool> purchasePremiumMock({
+    String productId = 'kitchy_premium_monthly',
+  }) async {
     try {
       await Future.delayed(const Duration(seconds: 2));
 
@@ -99,7 +101,7 @@ class BillingService {
         '/billing/verify-purchase',
         {
           'purchase_token': 'SANDBOX_TEST_TOKEN_V1',
-          'product_id': 'kitchy_premium_monthly',
+          'product_id': productId,
         },
       );
 
@@ -108,7 +110,7 @@ class BillingService {
         return data['status'] == 'premium_activated';
       }
 
-      print('[BillingService] purchasePremiumMock: status ${response.statusCode}');
+      print('[BillingService] purchasePremiumMock: status ${response.statusCode} | product=$productId');
       return false;
     } catch (e) {
       print('[BillingService] purchasePremiumMock error: $e');

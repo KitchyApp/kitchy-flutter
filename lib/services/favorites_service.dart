@@ -15,6 +15,9 @@ class FavoritesService {
   //  - Per-item try/catch — one corrupted row never crashes the whole list
   // ==========================================================================
 
+  /// Alias for [getFavorites] — preferred name in new callers.
+  static Future<List<Recipe>> fetchSavedRecipes() => getFavorites();
+
   static Future<List<Recipe>> getFavorites() async {
     final response = await apiClient.get('/favorites');
 
