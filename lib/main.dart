@@ -11,6 +11,7 @@ import 'premium_screen.dart';
 import 'screens/login_screen.dart';
 
 import 'core/api_client.dart';
+import 'core/network_info.dart';
 import 'features/auth/auth_service.dart';
 import 'services/billing_service.dart';
 import 'services/notification_service.dart';
@@ -175,6 +176,12 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     _initHomeState();
+    // Rebuild whenever connectivity changes so buttons enable/disable reactively.
+    isOnlineNotifier.addListener(_onConnectivityChange);
+  }
+
+  void _onConnectivityChange() {
+    if (mounted) setState(() {});
   }
 
   // Chains loadUserStatus → manageAppNotifications in the correct order.
@@ -201,6 +208,7 @@ class _HomePageState extends State<HomePage> {
 
   @override
   void dispose() {
+    isOnlineNotifier.removeListener(_onConnectivityChange);
     ingredientsController.dispose();
     super.dispose();
   }
@@ -544,7 +552,40 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
 
-      body: Stack(
+      body: Column(
+        children: [
+          // ── Offline banner — shown reactively without full rebuild ────────
+          ValueListenableBuilder<bool>(
+            valueListenable: isOnlineNotifier,
+            builder: (_, isOnline, __) => isOnline
+                ? const SizedBox.shrink()
+                : Container(
+                    width: double.infinity,
+                    color: Colors.grey[700],
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 16, vertical: 10),
+                    child: const Row(
+                      children: [
+                        Icon(Icons.cloud_off, color: Colors.white, size: 16),
+                        SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            'Estás em modo offline. A mostrar dados guardados.',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 13,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+          ),
+
+          // ── Main content ─────────────────────────────────────────────────
+          Expanded(
+            child: Stack(
         children: [
           // ── Main scrollable content ──────────────────────────────────────
           // SingleChildScrollView + Column replaces the old Column+Expanded
@@ -614,14 +655,18 @@ class _HomePageState extends State<HomePage> {
                   const SizedBox(height: 20),
 
                   ElevatedButton(
-                    onPressed: isLoading ? null : generateFromText,
+                    onPressed: (isLoading || !isOnlineNotifier.value)
+                        ? null
+                        : generateFromText,
                     child: const Text("Gerar receitas com IA"),
                   ),
 
                   const SizedBox(height: 12),
 
                   ElevatedButton(
-                    onPressed: isLoading ? null : takePhoto,
+                    onPressed: (isLoading || !isOnlineNotifier.value)
+                        ? null
+                        : takePhoto,
                     child: const Text("Fotografar ingredientes"),
                   ),
 
@@ -723,7 +768,10 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
         ],
-      ),
+            ),   // Stack
+          ),     // Expanded
+        ],
+      ),         // Column (body)
     );
   }
 }

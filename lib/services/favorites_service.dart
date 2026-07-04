@@ -1,9 +1,13 @@
+import 'dart:async';
 import 'dart:convert';
+
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../main.dart';
 import '../models/recipe.dart';
 
 class FavoritesService {
+  static const _cacheKey = 'favorites_cache';
   // ==========================================================================
   // GET FAVORITES  →  GET /favorites
   // ==========================================================================
@@ -49,7 +53,45 @@ class FavoritesService {
       }
     }
 
+    // Persist a local snapshot so the screen can render it while offline.
+    unawaited(_saveCache(result));
+
     return result;
+  }
+
+  // ==========================================================================
+  // LOCAL CACHE — read / write via SharedPreferences
+  // ==========================================================================
+
+  /// Persists [recipes] to SharedPreferences.
+  /// Called fire-and-forget after every successful [getFavorites] response.
+  static Future<void> _saveCache(List<Recipe> recipes) async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final json = jsonEncode(
+        recipes.map((r) => {'id': r.favoriteId, ...r.toJson()}).toList(),
+      );
+      await prefs.setString(_cacheKey, json);
+    } catch (_) {
+      // Cache write failure is non-fatal — never surface to the user.
+    }
+  }
+
+  /// Returns the last locally cached favorites list, or [] if no cache exists.
+  /// Used by [FavoritesScreen] to show data while the device is offline.
+  static Future<List<Recipe>> getCachedFavorites() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final raw = prefs.getString(_cacheKey);
+      if (raw == null) return [];
+
+      final list = jsonDecode(raw) as List<dynamic>;
+      return list
+          .map((e) => Recipe.fromJson(e as Map<String, dynamic>))
+          .toList();
+    } catch (_) {
+      return [];
+    }
   }
 
   // ==========================================================================

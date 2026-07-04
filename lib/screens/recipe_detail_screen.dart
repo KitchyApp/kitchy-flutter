@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:share_plus/share_plus.dart';
 
 import '../models/recipe.dart';
 import '../services/favorites_service.dart';
-import 'package:share_plus/share_plus.dart';
+import 'hands_free_screen.dart';
 
 class RecipeDetailScreen extends StatefulWidget {
   const RecipeDetailScreen({
@@ -87,6 +88,25 @@ class _RecipeDetailScreenState
   @override
   Widget build(BuildContext context) {
     return Scaffold(
+      floatingActionButton: widget.recipe.steps.isNotEmpty
+          ? FloatingActionButton.extended(
+              onPressed: () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) =>
+                      HandsFreeScreen(recipe: widget.recipe),
+                ),
+              ),
+              backgroundColor: const Color(0xFFFF7043),
+              elevation: 4,
+              icon: const Icon(Icons.mic, color: Colors.white),
+              label: const Text(
+                'Mãos Livres',
+                style: TextStyle(
+                    color: Colors.white, fontWeight: FontWeight.bold),
+              ),
+            )
+          : null,
       appBar: AppBar(
         title: Text(widget.recipe.title),
 

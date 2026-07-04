@@ -4,6 +4,9 @@
     <!-- Required for all HTTP calls (release, profile and debug) -->
     <uses-permission android:name="android.permission.INTERNET"/>
 
+    <!-- Required by speech_to_text for voice recognition -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+
     <!--
         networkSecurityConfig replaces the blunt usesCleartextTraffic flag.
         It allows HTTP cleartext ONLY for 10.0.2.2 (Android emulator → host

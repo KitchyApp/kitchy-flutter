@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../core/network_info.dart';
 import '../main.dart' show appApi;
 import '../models/recipe.dart';
 import '../services/favorites_service.dart';
@@ -35,6 +36,7 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   List<Recipe> _filteredRecipes = [];
 
   bool _isLoading = true;
+  bool _isOffline = false;
   String? _error;
 
   // ── Search state ─────────────────────────────────────────────────────────────
@@ -73,10 +75,21 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       if (!mounted) return;
       setState(() {
         _favorites = result;
+        _isOffline = false;
         _isLoading = false;
       });
       // Re-apply the current search query to the fresh list so any pending
       // filter is not silently dropped after a pull-to-refresh.
+      _applyFilter();
+    } on NoInternetException {
+      // No network — serve the locally cached snapshot instead of an error.
+      final cached = await FavoritesService.getCachedFavorites();
+      if (!mounted) return;
+      setState(() {
+        _favorites = cached;
+        _isOffline = true;
+        _isLoading = false;
+      });
       _applyFilter();
     } catch (e) {
       debugPrint('[FavoritesScreen] Erro ao carregar favoritos: $e');
@@ -123,6 +136,18 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
   Future<void> _removeFavorite(Recipe recipe) async {
     if (recipe.favoriteId == null) return;
 
+    // Cannot mutate server data while offline.
+    if (_isOffline) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sem ligação. Não é possível remover em modo offline.'),
+          backgroundColor: Colors.grey,
+          duration: Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
     try {
       await FavoritesService.removeFavorite(recipe.favoriteId!);
       if (!mounted) return;
@@ -134,6 +159,16 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
         ),
       );
       await _loadFavorites();
+    } on NoInternetException {
+      if (!mounted) return;
+      setState(() => _isOffline = true);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Sem ligação. Não foi possível remover.'),
+          backgroundColor: Colors.grey,
+          duration: Duration(seconds: 3),
+        ),
+      );
     } catch (e) {
       debugPrint('[FavoritesScreen] Erro ao remover favorito: $e');
       if (!mounted) return;
@@ -157,7 +192,17 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
       appBar: AppBar(
         title: const Text('Favoritos ❤️'),
       ),
-      body: _buildBody(),
+      body: Column(
+        children: [
+          // ── Offline banner (reactive, shown/hidden without rebuild) ────────
+          ValueListenableBuilder<bool>(
+            valueListenable: isOnlineNotifier,
+            builder: (_, isOnline, __) =>
+                isOnline ? const SizedBox.shrink() : const _OfflineBanner(),
+          ),
+          Expanded(child: _buildBody()),
+        ],
+      ),
     );
   }
 
@@ -310,6 +355,39 @@ class _FavoritesScreenState extends State<FavoritesScreen> {
           ),
         ),
       ],
+    );
+  }
+}
+
+// =============================================================================
+// OFFLINE BANNER
+// =============================================================================
+
+class _OfflineBanner extends StatelessWidget {
+  const _OfflineBanner();
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      color: Colors.grey[700],
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+      child: const Row(
+        children: [
+          Icon(Icons.cloud_off, color: Colors.white, size: 16),
+          SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              'Estás em modo offline. A mostrar dados guardados.',
+              style: TextStyle(
+                color: Colors.white,
+                fontSize: 13,
+                fontWeight: FontWeight.w500,
+              ),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
