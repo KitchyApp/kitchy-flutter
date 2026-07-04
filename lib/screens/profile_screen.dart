@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../main.dart' show appApi;
@@ -10,10 +12,9 @@ import '../main.dart' show appApi;
 //
 // Data flow
 // ---------
-// initState calls both endpoints in parallel:
-//   GET /auth/user/status  → email + plan badge
-//   GET /preferences       → dietary switches + cuisine
-// On save:
+// initState calls a single endpoint:
+//   GET /auth/user/status  → email + plan badge + dietary switches + cuisine
+// On save (button press or 600 ms after any toggle / dropdown change):
 //   PUT /update-preferences → persists all preference fields
 // =============================================================================
 
@@ -39,6 +40,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _isLoading = true;
   bool _isSaving = false;
 
+  // Debounce timer: rapid consecutive toggles collapse into a single PUT.
+  Timer? _saveDebounce;
+
   static const List<Map<String, String>> _cuisineOptions = [
     {'value': 'international', 'label': 'Internacional'},
     {'value': 'italian',       'label': 'Italiana'},
@@ -62,6 +66,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
     _loadAll();
   }
 
+  @override
+  void dispose() {
+    _saveDebounce?.cancel();
+    super.dispose();
+  }
+
   // ============================================================================
   // DATA — load status + preferences in parallel
   // ============================================================================
@@ -71,19 +81,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
     setState(() => _isLoading = true);
 
     try {
-      // Run both requests concurrently — typically completes in ~200 ms total.
-      final results = await Future.wait([
-        appApi.getUserStatus(),
-        appApi.getPreferences(),
-      ]);
+      // Single request: GET /auth/user/status now returns identity AND
+      // dietary preferences, so no second call to GET /preferences is needed.
+      final status = await appApi.getUserStatus();
 
       if (!mounted) return;
 
-      final status = results[0];
-      final prefs  = results[1];
-
       // Cuisine guard: fall back to 'international' for unknown backend values.
-      final rawCuisine = (prefs['preferred_cuisine'] as String?) ?? 'international';
+      final rawCuisine =
+          (status['preferred_cuisine'] as String?) ?? 'international';
       final safeCuisine = _cuisineOptions.any((o) => o['value'] == rawCuisine)
           ? rawCuisine
           : 'international';
@@ -93,10 +99,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _email     = (status['email'] as String?) ?? '';
         _isPremium = status['is_premium'] == true;
 
-        // Preferences
-        _glutenFree      = prefs['dietary_gluten_free'] == true;
-        _vegetarian      = prefs['dietary_vegetarian']  == true;
-        _vegan           = prefs['dietary_vegan']       == true;
+        // Dietary preferences (now included in the status response)
+        _glutenFree       = status['dietary_gluten_free'] == true;
+        _vegetarian       = status['dietary_vegetarian']  == true;
+        _vegan            = status['dietary_vegan']       == true;
         _preferredCuisine = safeCuisine;
 
         _isLoading = false;
@@ -112,6 +118,14 @@ class _ProfileScreenState extends State<ProfileScreen> {
   // ============================================================================
   // SAVE
   // ============================================================================
+
+  // Called from every onChanged handler. Cancels any pending timer and starts
+  // a fresh 600 ms countdown so that rapid consecutive toggles collapse into
+  // a single PUT — the one that reflects the final settled state.
+  void _scheduleSave() {
+    _saveDebounce?.cancel();
+    _saveDebounce = Timer(const Duration(milliseconds: 600), _save);
+  }
 
   Future<void> _save() async {
     if (_isSaving) return;
@@ -215,7 +229,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                           ),
                           value: _glutenFree,
                           activeColor: const Color(0xFFFF7043),
-                          onChanged: (v) => setState(() => _glutenFree = v),
+                          onChanged: (v) {
+                            setState(() => _glutenFree = v);
+                            _scheduleSave();
+                          },
                         ),
 
                         const Divider(height: 1, indent: 16, endIndent: 16),
@@ -242,7 +259,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             activeColor: const Color(0xFFFF7043),
                             onChanged: _vegan
                                 ? null
-                                : (v) => setState(() => _vegetarian = v),
+                                : (v) {
+                                    setState(() => _vegetarian = v);
+                                    _scheduleSave();
+                                  },
                           ),
                         ),
 
@@ -271,6 +291,7 @@ class _ProfileScreenState extends State<ProfileScreen> {
                               _vegan = v;
                               if (v) _vegetarian = true;
                             });
+                            _scheduleSave();
                           },
                         ),
                       ],
@@ -335,7 +356,10 @@ class _ProfileScreenState extends State<ProfileScreen> {
                             )
                             .toList(),
                         onChanged: (v) {
-                          if (v != null) setState(() => _preferredCuisine = v);
+                          if (v != null) {
+                            setState(() => _preferredCuisine = v);
+                            _scheduleSave();
+                          }
                         },
                       ),
                     ),

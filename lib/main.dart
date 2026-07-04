@@ -41,7 +41,7 @@ void main() async {
   // Initialize local notifications plugin + timezone database.
   // Must run after ensureInitialized() and before runApp() so the plugin's
   // platform channel is ready before any widget tree is built.
-  await NotificationService.initialize();
+  await NotificationService().init();
 
   // ── Start-screen resolution (inside try-catch — see comment below) ──────────
   // Routing must NOT happen inside MyApp.build(): at that point there is no
@@ -196,7 +196,7 @@ class _HomePageState extends State<HomePage> {
     //
     // Fire-and-forget: notification scheduling is a background operation and
     // must never block the UI. Errors are swallowed inside manageAppNotifications.
-    NotificationService.manageAppNotifications(premium);
+    NotificationService().manageAppNotifications(premium);
   }
 
   @override
@@ -309,7 +309,7 @@ class _HomePageState extends State<HomePage> {
             // confirmed — before the UI even finishes updating.
             // We pass true directly rather than reading isPremiumUser from
             // state because setState above may not have flushed yet.
-            NotificationService.manageAppNotifications(true);
+            NotificationService().manageAppNotifications(true);
           },
         ),
       ),
