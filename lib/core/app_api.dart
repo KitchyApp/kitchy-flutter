@@ -195,6 +195,59 @@ class AppApi {
   }
 
   // ============================================================================
+  // GET CHALLENGES  →  GET /challenges
+  // ============================================================================
+  // Returns the full challenge list with the current user's progress.
+  // Each map already contains is_locked / is_completed set by the backend
+  // so the UI only needs to render — no plan checks needed client-side.
+  Future<List<Map<String, dynamic>>> getChallenges() async {
+    final response = await client.get('/challenges');
+
+    if (response.statusCode == 200) {
+      final dynamic decoded = jsonDecode(response.body);
+      if (decoded is List) {
+        return decoded.cast<Map<String, dynamic>>();
+      }
+      return [];
+    }
+
+    throw Exception(
+      'Falha ao obter desafios: HTTP ${response.statusCode}',
+    );
+  }
+
+  // ============================================================================
+  // VERIFY CHALLENGE  →  POST /challenges/{id}/verify
+  // ============================================================================
+  // Called after a recipe is generated to check if the ingredients used
+  // satisfy a challenge's required_ingredients.
+  // Returns { completed, badge_code, already_completed?, missing? }.
+  Future<Map<String, dynamic>> verifyChallenge(
+    int challengeId,
+    List<String> ingredients,
+  ) async {
+    final response = await client.post(
+      '/challenges/$challengeId/verify',
+      {'ingredients': ingredients},
+    );
+
+    if (response.statusCode == 200) {
+      final dynamic decoded = jsonDecode(response.body);
+      if (decoded is Map<String, dynamic>) return decoded;
+      return {'completed': false};
+    }
+
+    // 403 = premium-only challenge; surface as a non-fatal result.
+    if (response.statusCode == 403) {
+      return {'completed': false, 'locked': true};
+    }
+
+    throw Exception(
+      'Falha ao verificar desafio: HTTP ${response.statusCode}',
+    );
+  }
+
+  // ============================================================================
   // LOG ANALYTICS EVENT  →  POST /analytics/log
   // ============================================================================
   // Fire-and-forget: always returns void, NEVER throws.

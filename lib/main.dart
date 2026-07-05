@@ -15,6 +15,7 @@ import 'core/network_info.dart';
 import 'features/auth/auth_service.dart';
 import 'services/billing_service.dart';
 import 'services/notification_service.dart';
+import 'screens/challenges_screen.dart';
 import 'screens/favorites_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/paywall_screen.dart';
@@ -510,6 +511,18 @@ class _HomePageState extends State<HomePage> {
       appBar: AppBar(
         title: const Text("Kitchy"),
         actions: [
+          IconButton(
+            onPressed: () {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const ChallengesScreen(),
+                ),
+              );
+            },
+            icon: const Icon(Icons.emoji_events_rounded),
+            tooltip: 'Desafios',
+          ),
           IconButton(
             onPressed: () {
               Navigator.push(
