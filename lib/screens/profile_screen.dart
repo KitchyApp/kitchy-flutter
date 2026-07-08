@@ -36,6 +36,9 @@ class _ProfileScreenState extends State<ProfileScreen> {
   bool _vegan = false;
   String _preferredCuisine = 'international';
 
+  // ── Badges ────────────────────────────────────────────────────────────────
+  List<String> _earnedBadges = [];
+
   // ── UI state ──────────────────────────────────────────────────────────────
   bool _isLoading = true;
   bool _isSaving = false;
@@ -104,6 +107,12 @@ class _ProfileScreenState extends State<ProfileScreen> {
         _vegetarian       = status['dietary_vegetarian']  == true;
         _vegan            = status['dietary_vegan']       == true;
         _preferredCuisine = safeCuisine;
+
+        // Earned badges — list of badge_code strings from completed challenges
+        final raw = status['earned_badges'];
+        _earnedBadges = raw is List
+            ? List<String>.from(raw.whereType<String>())
+            : [];
 
         _isLoading = false;
       });
@@ -375,6 +384,13 @@ class _ProfileScreenState extends State<ProfileScreen> {
 
                   const SizedBox(height: 36),
 
+                  // ── Section: Earned badges ───────────────────────────────
+                  _SectionLabel('Medalhas do Chef 🏅'),
+                  const SizedBox(height: 12),
+                  _BadgesSection(earnedBadges: _earnedBadges),
+
+                  const SizedBox(height: 36),
+
                   // ── Save button ──────────────────────────────────────────
                   ElevatedButton.icon(
                     onPressed: _isSaving ? null : _save,
@@ -516,6 +532,140 @@ class _SectionLabel extends StatelessWidget {
     return Text(
       label,
       style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+    );
+  }
+}
+
+// =============================================================================
+// BADGE DATA
+// =============================================================================
+
+class _BadgeInfo {
+  final String emoji;
+  final String name;
+  final Color color;
+  const _BadgeInfo(this.emoji, this.name, this.color);
+}
+
+const Map<String, _BadgeInfo> _kBadgeMap = {
+  'badge_tomato':        _BadgeInfo('🍅', 'Rei do Tomate',           Color(0xFFFFCDD2)),
+  'badge_chickpea':      _BadgeInfo('🫘', 'Mestre das Leguminosas',  Color(0xFFFFF9C4)),
+  'badge_tuna':          _BadgeInfo('🐟', 'Caçador de Atum',         Color(0xFFB3E5FC)),
+  'badge_lentil':        _BadgeInfo('🟤', 'Herói das Lentilhas',     Color(0xFFD7CCC8)),
+  'badge_egg':           _BadgeInfo('🥚', 'Rei dos Ovos',            Color(0xFFFFF8E1)),
+  'badge_protein':       _BadgeInfo('🍗', 'Monstro do Ginásio',      Color(0xFFFFE0B2)),
+  'badge_gourmet':       _BadgeInfo('🥑', 'Chef de Elite',           Color(0xFFC8E6C9)),
+  'badge_rosemary':      _BadgeInfo('🌿', 'Lombo & Alecrim',         Color(0xFFDCEDC8)),
+  'badge_mediterranean': _BadgeInfo('🐠', 'Rei do Mediterrâneo',     Color(0xFFB2EBF2)),
+  'badge_mushroom':      _BadgeInfo('🍄', 'O Cogumelo Místico',      Color(0xFFE1BEE7)),
+};
+
+// =============================================================================
+// BADGES SECTION WIDGET
+// =============================================================================
+
+class _BadgesSection extends StatelessWidget {
+  final List<String> earnedBadges;
+  const _BadgesSection({required this.earnedBadges});
+
+  @override
+  Widget build(BuildContext context) {
+    if (earnedBadges.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(vertical: 28, horizontal: 20),
+        decoration: BoxDecoration(
+          color: Colors.grey[50],
+          borderRadius: BorderRadius.circular(18),
+          border: Border.all(color: Colors.grey.shade200),
+        ),
+        child: Column(
+          children: [
+            Text(
+              '🍳',
+              style: const TextStyle(fontSize: 40),
+            ),
+            const SizedBox(height: 12),
+            const Text(
+              'Ainda não tens medalhas.',
+              style: TextStyle(
+                fontSize: 15,
+                fontWeight: FontWeight.w600,
+                color: Color(0xFF5D4037),
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Aceita um Desafio do Chef para começares\na tua coleção!',
+              style: TextStyle(fontSize: 13, color: Colors.grey[600]),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      );
+    }
+
+    return Wrap(
+      spacing: 12,
+      runSpacing: 12,
+      children: earnedBadges.map((code) => _BadgeTile(badgeCode: code)).toList(),
+    );
+  }
+}
+
+// =============================================================================
+// SINGLE BADGE TILE
+// =============================================================================
+
+class _BadgeTile extends StatelessWidget {
+  final String badgeCode;
+  const _BadgeTile({required this.badgeCode});
+
+  @override
+  Widget build(BuildContext context) {
+    final info = _kBadgeMap[badgeCode] ??
+        const _BadgeInfo('🏅', 'Conquista', Color(0xFFF5F5F5));
+
+    return SizedBox(
+      width: 90,
+      child: Column(
+        children: [
+          Container(
+            width: 72,
+            height: 72,
+            decoration: BoxDecoration(
+              color: info.color,
+              shape: BoxShape.circle,
+              boxShadow: [
+                BoxShadow(
+                  color: info.color.withValues(alpha: 0.6),
+                  blurRadius: 10,
+                  offset: const Offset(0, 4),
+                ),
+              ],
+            ),
+            child: Center(
+              child: Text(
+                info.emoji,
+                style: const TextStyle(fontSize: 34),
+              ),
+            ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            info.name,
+            style: const TextStyle(
+              fontSize: 11,
+              fontWeight: FontWeight.w600,
+              color: Color(0xFF4E342E),
+            ),
+            textAlign: TextAlign.center,
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ],
+      ),
     );
   }
 }
