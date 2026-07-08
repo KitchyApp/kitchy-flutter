@@ -19,6 +19,13 @@ class BillingService {
   final ApiClient apiClient;
   final InAppPurchase _iap = InAppPurchase.instance;
 
+  /// Product IDs — must match Google Play / backend billing config.
+  static const monthlyProductId = 'kitchy_premium_monthly';
+  static const yearlyProductId = 'kitchy_premium_yearly';
+
+  /// Sandbox token accepted by POST /billing/verify-purchase in dev/emulator.
+  static const sandboxToken = 'SANDBOX_TEST_TOKEN_V1';
+
   BillingService(this.apiClient);
 
   // ============================================================================
@@ -92,7 +99,7 @@ class BillingService {
   // MOCK PURCHASE (sandbox — bypasses Google Play plugin)
   // ============================================================================
   Future<bool> purchasePremiumMock({
-    String productId = 'kitchy_premium_monthly',
+    String productId = monthlyProductId,
   }) async {
     try {
       await Future.delayed(const Duration(seconds: 2));
@@ -100,7 +107,7 @@ class BillingService {
       final response = await apiClient.post(
         '/billing/verify-purchase',
         {
-          'purchase_token': 'SANDBOX_TEST_TOKEN_V1',
+          'purchase_token': sandboxToken,
           'product_id': productId,
         },
       );

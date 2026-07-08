@@ -20,7 +20,7 @@ import 'paywall_screen.dart';
 //     Ao tentar avançar para o passo 4, surge o BottomSheet de paywall.
 //   - Utilizadores Premium  → fluxo completo sem interrupções.
 //
-// Ciclo de áudio:
+// Ciclo de áudio (após "Ativar Modo Voz"):
 //   speak(passo) → onCompletion → startListening → onResult → handleCommand
 // =============================================================================
 
@@ -38,9 +38,9 @@ class HandsFreeScreen extends StatefulWidget {
 
 class _HandsFreeScreenState extends State<HandsFreeScreen>
     with SingleTickerProviderStateMixin {
-  // ── Engines ──────────────────────────────────────────────────────────────
-  final FlutterTts _tts = FlutterTts();
-  final SpeechToText _speech = SpeechToText();
+  // ── Engines (lazy — created only when user taps "Ativar Modo Voz") ───────
+  FlutterTts? _tts;
+  SpeechToText? _speech;
 
   // ── Navigation ───────────────────────────────────────────────────────────
   int _currentStep = 0;
@@ -49,11 +49,15 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
   bool _isPremium = false;
   bool _planLoaded = false;
 
+  // ── Voice mode ───────────────────────────────────────────────────────────
+  bool _voiceActive = false;
+  bool _voiceInitializing = false;
+  bool _speechAvailable = false;
+
   // ── UI state ─────────────────────────────────────────────────────────────
   bool _isSpeaking = false;
   bool _isListening = false;
-  bool _speechAvailable = false;
-  String _statusText = 'A inicializar...';
+  String _statusText = 'A carregar...';
   String _recognizedText = '';
 
   // ── Mic pulse animation ───────────────────────────────────────────────────
@@ -78,52 +82,73 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
       CurvedAnimation(parent: _pulseCtrl, curve: Curves.easeInOut),
     );
 
-    _init();
+    _loadPlan();
   }
 
   @override
   void dispose() {
     _pulseCtrl.dispose();
-    _tts.stop();
-    _speech.stop();
+    _tts?.stop();
+    _speech?.stop();
     super.dispose();
   }
 
   // ============================================================================
-  // INIT
+  // PLAN (no voice plugins — safe on screen open)
   // ============================================================================
 
-  Future<void> _init() async {
-    // 1. Fetch user plan
+  Future<void> _loadPlan() async {
     try {
       final status = await appApi.getUserStatus();
       if (mounted) {
         setState(() {
-          _isPremium = status['is_premium'] == true || status['plan'] == 'premium';
+          _isPremium =
+              status['is_premium'] == true || status['plan'] == 'premium';
           _planLoaded = true;
+          _statusText =
+              'Toca em "Ativar Modo Voz" para começar a cozinhar com as mãos livres.';
         });
       }
     } catch (_) {
-      if (mounted) setState(() => _planLoaded = true);
+      if (mounted) {
+        setState(() {
+          _planLoaded = true;
+          _statusText =
+              'Toca em "Ativar Modo Voz" para começar a cozinhar com as mãos livres.';
+        });
+      }
     }
+  }
 
-    // 2. Configure TTS
-    await _tts.setLanguage('pt-PT');
-    await _tts.setSpeechRate(0.45);
-    await _tts.setVolume(1.0);
-    await _tts.setPitch(1.05);
+  // ============================================================================
+  // VOICE ACTIVATION (explicit user action — TTS + STT init here only)
+  // ============================================================================
 
-    // Auto-start listening after each utterance completes.
-    _tts.setCompletionHandler(() {
-      if (mounted && !_isListening) _startListening();
+  Future<void> _activateVoiceMode() async {
+    if (_voiceActive || _voiceInitializing) return;
+
+    setState(() {
+      _voiceInitializing = true;
+      _statusText = 'A activar modo voz...';
     });
 
-    _tts.setErrorHandler((msg) {
+    _tts = FlutterTts();
+    _speech = SpeechToText();
+
+    await _tts!.setLanguage('pt-PT');
+    await _tts!.setSpeechRate(0.45);
+    await _tts!.setVolume(1.0);
+    await _tts!.setPitch(1.05);
+
+    _tts!.setCompletionHandler(() {
+      if (mounted && _voiceActive && !_isListening) _startListening();
+    });
+
+    _tts!.setErrorHandler((msg) {
       debugPrint('[HandsFree] TTS error: $msg');
     });
 
-    // 3. Initialise STT
-    _speechAvailable = await _speech.initialize(
+    _speechAvailable = await _speech!.initialize(
       onStatus: _onSpeechStatus,
       onError: (err) {
         debugPrint('[HandsFree] STT error: $err');
@@ -137,12 +162,24 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
       },
     );
 
-    if (mounted) {
-      setState(() => _statusText =
-          'Pronto! Diz "Seguinte", "Repete" ou "Anterior".');
+    if (!mounted) return;
+
+    if (!_speechAvailable) {
+      setState(() {
+        _voiceInitializing = false;
+        _tts = null;
+        _speech = null;
+        _statusText = 'Microfone indisponível. Usa os botões abaixo.';
+      });
+      return;
     }
 
-    // 4. Auto-read step 1
+    setState(() {
+      _voiceActive = true;
+      _voiceInitializing = false;
+      _statusText = 'Pronto! Diz "Seguinte", "Repete" ou "Anterior".';
+    });
+
     await _speakCurrentStep();
   }
 
@@ -164,9 +201,10 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
   // ============================================================================
 
   Future<void> _speakCurrentStep() async {
-    if (!mounted) return;
-    await _tts.stop();
-    await _speech.stop();
+    if (!mounted || !_voiceActive || _tts == null) return;
+
+    await _tts!.stop();
+    await _speech?.stop();
 
     setState(() {
       _isSpeaking = true;
@@ -177,7 +215,7 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
     _pulseCtrl.stop();
 
     final text = 'Passo ${_currentStep + 1}. ${_steps[_currentStep]}';
-    await _tts.speak(text);
+    await _tts!.speak(text);
 
     if (mounted) setState(() => _isSpeaking = false);
   }
@@ -187,8 +225,10 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
   // ============================================================================
 
   Future<void> _startListening() async {
-    if (!_speechAvailable || !mounted) return;
-    await _speech.stop();
+    if (!_voiceActive || !_speechAvailable || _speech == null || !mounted) {
+      return;
+    }
+    await _speech!.stop();
 
     setState(() {
       _isListening = true;
@@ -197,7 +237,7 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
     });
     _pulseCtrl.repeat(reverse: true);
 
-    await _speech.listen(
+    await _speech!.listen(
       onResult: _onSpeechResult,
       listenFor: const Duration(seconds: 8),
       pauseFor: const Duration(seconds: 2),
@@ -243,9 +283,8 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
 
   void _nextStep() {
     if (!_isPremium && _currentStep >= _kFreeVoiceLimit) {
-      // Free users hit the voice limit — stop audio and show paywall.
-      _tts.stop();
-      _speech.stop();
+      _tts?.stop();
+      _speech?.stop();
       _pulseCtrl.stop();
       setState(() {
         _isListening = false;
@@ -258,9 +297,13 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
 
     if (_currentStep < _steps.length - 1) {
       setState(() => _currentStep++);
-      _speakCurrentStep();
+      if (_voiceActive) {
+        _speakCurrentStep();
+      }
+    } else if (_voiceActive && _tts != null) {
+      _tts!.speak('Parabéns! Chegaste ao fim da receita. Bom apetite!');
+      setState(() => _statusText = '🎉 Receita concluída!');
     } else {
-      _tts.speak('Parabéns! Chegaste ao fim da receita. Bom apetite!');
       setState(() => _statusText = '🎉 Receita concluída!');
     }
   }
@@ -268,19 +311,38 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
   void _previousStep() {
     if (_currentStep > 0) {
       setState(() => _currentStep--);
-      _speakCurrentStep();
-    } else {
-      _tts.speak('Já estás no primeiro passo.');
+      if (_voiceActive) {
+        _speakCurrentStep();
+      }
+    } else if (_voiceActive && _tts != null) {
+      _tts!.speak('Já estás no primeiro passo.');
       setState(() => _statusText = 'Já estás no passo 1.');
       Future.delayed(const Duration(seconds: 2), _startListening);
     }
   }
 
-  void _repeatStep() => _speakCurrentStep();
+  void _repeatStep() {
+    if (_voiceActive) {
+      _speakCurrentStep();
+    }
+  }
 
   // ============================================================================
   // PREMIUM GATE
   // ============================================================================
+
+  Future<void> _refreshPremiumStatus() async {
+    try {
+      final status = await appApi.getUserStatus();
+      if (!mounted) return;
+      setState(() {
+        _isPremium =
+            status['is_premium'] == true || status['plan'] == 'premium';
+      });
+    } catch (_) {
+      // Keep local optimistic state if refresh fails.
+    }
+  }
 
   void _showPremiumGate() {
     showModalBottomSheet(
@@ -289,15 +351,13 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
       backgroundColor: Colors.transparent,
       builder: (_) => _PremiumGateSheet(
         onUpgrade: () {
-          Navigator.pop(context); // dismiss sheet
+          Navigator.pop(context);
           Navigator.push(
             context,
             MaterialPageRoute(
               builder: (_) => PaywallScreen(
                 billingService: billingService,
-                onPurchaseSuccess: () {
-                  setState(() => _isPremium = true);
-                },
+                onPurchaseSuccess: _refreshPremiumStatus,
               ),
             ),
           );
@@ -516,6 +576,45 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
                       style:
                           TextStyle(color: Color(0xFFFF7043), fontSize: 12),
                       textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+              ],
+
+              // ── Activate voice mode (lazy plugin init) ─────────────────────
+              if (!_voiceActive) ...[
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    onPressed:
+                        _voiceInitializing ? null : _activateVoiceMode,
+                    icon: _voiceInitializing
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Colors.white,
+                            ),
+                          )
+                        : const Icon(Icons.mic, color: Colors.white),
+                    label: Text(
+                      _voiceInitializing
+                          ? 'A activar...'
+                          : 'Ativar Modo Voz',
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.white,
+                      ),
+                    ),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: const Color(0xFFFF7043),
+                      padding: const EdgeInsets.symmetric(vertical: 16),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                      ),
                     ),
                   ),
                 ),

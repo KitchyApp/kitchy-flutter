@@ -5,8 +5,8 @@ import '../services/billing_service.dart';
 // =============================================================================
 // PAYWALL SCREEN
 // =============================================================================
-// Shows the two subscription plans (monthly / annual) and handles the mock
-// purchase flow via BillingService.purchasePremiumMock(productId: ...).
+// Shows the two subscription plans (monthly / annual) and starts the Google
+// Play billing flow via BillingService.buy(productId).
 //
 // Usage:
 //   await Navigator.push<bool>(
@@ -51,8 +51,8 @@ class _PaywallScreenState extends State<PaywallScreen> {
   // ── Derived from selection ───────────────────────────────────────────────────
 
   String get _productId => _selectedPlan == _Plan.monthly
-      ? 'kitchy_premium_monthly'
-      : 'kitchy_premium_yearly';
+      ? BillingService.monthlyProductId
+      : BillingService.yearlyProductId;
 
   String get _ctaLabel => _selectedPlan == _Plan.monthly
       ? 'Subscrever Plano Mensal'
@@ -68,38 +68,20 @@ class _PaywallScreenState extends State<PaywallScreen> {
     });
 
     try {
-      final success = await widget.billingService.purchasePremiumMock(
-        productId: _productId,
-      );
+      await widget.billingService.buy(_productId);
 
       if (!mounted) return;
 
-      if (success) {
-        // Update the parent state before popping — parent UI reflects the new
-        // plan the moment this screen disappears.
-        await widget.onPurchaseSuccess?.call();
-        if (!mounted) return;
+      await widget.onPurchaseSuccess?.call();
+      if (!mounted) return;
 
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Parabéns! Kitchy Premium ativado com sucesso! ⚡'),
-            backgroundColor: _green,
-            duration: Duration(seconds: 4),
-          ),
-        );
-
-        Navigator.pop(context, true);
-      } else {
-        setState(() {
-          _errorMessage =
-              'Não foi possível verificar a compra. Tenta novamente.';
-        });
-      }
+      Navigator.pop(context, true);
     } catch (e) {
       debugPrint('[PaywallScreen] Erro: $e');
       if (!mounted) return;
       setState(() {
-        _errorMessage = 'Erro inesperado. Verifica a ligação e tenta de novo.';
+        _errorMessage =
+            'Não foi possível iniciar a subscrição. Tenta novamente.';
       });
     } finally {
       if (mounted) setState(() => _isLoading = false);

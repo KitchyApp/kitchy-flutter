@@ -105,7 +105,9 @@ class _ChallengesScreenState extends State<ChallengesScreen> {
       MaterialPageRoute(
         builder: (_) => PaywallScreen(
           billingService: billingService,
-          onPurchaseSuccess: _load, // refresh after upgrade
+          onPurchaseSuccess: () async {
+            await _load();
+          },
         ),
       ),
     );
