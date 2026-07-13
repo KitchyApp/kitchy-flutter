@@ -22,7 +22,7 @@ import 'screens/paywall_screen.dart';
 import 'screens/profile_screen.dart';
 import 'screens/profile_settings_screen.dart';
 
-const String baseUrl = "http://10.0.2.2:8000";
+const String baseUrl = "https://kitchy-api.onrender.com";
 
 // ============================================================================
 // GLOBAL SERVICES (SINGLETON STYLE)
