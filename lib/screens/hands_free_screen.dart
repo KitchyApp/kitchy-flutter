@@ -29,8 +29,13 @@ const int _kFreeVoiceLimit = 2; // índice 0-based → passos 1-3
 
 class HandsFreeScreen extends StatefulWidget {
   final Recipe recipe;
+  final bool autoStartVoice;
 
-  const HandsFreeScreen({super.key, required this.recipe});
+  const HandsFreeScreen({
+    super.key,
+    required this.recipe,
+    this.autoStartVoice = false,
+  });
 
   @override
   State<HandsFreeScreen> createState() => _HandsFreeScreenState();
@@ -117,6 +122,10 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
               'Toca em "Ativar Modo Voz" para começar a cozinhar com as mãos livres.';
         });
       }
+    }
+
+    if (widget.autoStartVoice && _steps.isNotEmpty && mounted) {
+      await _activateVoiceMode();
     }
   }
 

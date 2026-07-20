@@ -8,6 +8,7 @@ import 'models/recipe.dart';
 import 'services/ads_service.dart';
 import 'widgets/recipe_card_premium.dart';
 import 'premium_screen.dart';
+import 'screens/hands_free_screen.dart';
 import 'screens/login_screen.dart';
 
 import 'core/api_client.dart';
@@ -741,8 +742,10 @@ class _HomePageState extends State<HomePage> {
                           onTap: () => Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) =>
-                                  RecipeDetailScreen(recipe: recipe),
+                              builder: (_) => RecipeDetailScreen(
+                                recipe: recipe,
+                                isPremium: isPremiumUser,
+                              ),
                             ),
                           ),
                         );
@@ -793,13 +796,92 @@ class _HomePageState extends State<HomePage> {
 // ============================================================================
 // RECIPE DETAIL
 // ============================================================================
-class RecipeDetailScreen extends StatelessWidget {
+class RecipeDetailScreen extends StatefulWidget {
   final Recipe recipe;
+  final bool isPremium;
 
   const RecipeDetailScreen({
     super.key,
     required this.recipe,
+    required this.isPremium,
   });
+
+  @override
+  State<RecipeDetailScreen> createState() => _RecipeDetailScreenState();
+}
+
+class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
+  Recipe get recipe => widget.recipe;
+
+  void _showPremiumVoiceDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.mic, color: Color(0xFFFF7043)),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Modo Voz Premium',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: const Text(
+          'Cozinha com as mãos livres usando comandos de voz — '
+          '"Seguinte", "Repete" e "Anterior".\n\n'
+          'Adere ao Plano Premium para desbloquear o Modo Voz completo.',
+          style: TextStyle(height: 1.45),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Agora não'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFF7043),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PaywallScreen(
+                    billingService: billingService,
+                  ),
+                ),
+              );
+            },
+            child: const Text('Ver Premium ⭐'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openHandsFree() {
+    if (recipe.steps.isEmpty) return;
+
+    if (!widget.isPremium) {
+      _showPremiumVoiceDialog();
+      return;
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => HandsFreeScreen(
+          recipe: recipe,
+          autoStartVoice: true,
+        ),
+      ),
+    );
+  }
 
   Widget nutritionCard(
       String label,
@@ -863,10 +945,31 @@ class RecipeDetailScreen extends StatelessWidget {
     final vitamins = recipe.vitamins ?? {};
 
     return Scaffold(
+      floatingActionButton: recipe.steps.isNotEmpty
+          ? FloatingActionButton.extended(
+              onPressed: _openHandsFree,
+              backgroundColor: const Color(0xFFFF7043),
+              elevation: 4,
+              icon: const Icon(Icons.mic, color: Colors.white),
+              label: const Text(
+                'Mãos Livres',
+                style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                ),
+              ),
+            )
+          : null,
       appBar: AppBar(
         title: Text(recipe.title),
 
         actions: [
+          if (recipe.steps.isNotEmpty)
+            IconButton(
+              onPressed: _openHandsFree,
+              icon: const Icon(Icons.volume_up),
+              tooltip: 'Modo Voz',
+            ),
           IconButton(
             onPressed: () {},
             icon: const Icon(Icons.favorite_border),

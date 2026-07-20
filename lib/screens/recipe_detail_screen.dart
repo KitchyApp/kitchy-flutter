@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
+import '../main.dart' show appApi, billingService;
 import '../models/recipe.dart';
 import '../services/favorites_service.dart';
 import 'hands_free_screen.dart';
-
+import 'paywall_screen.dart';
 class RecipeDetailScreen extends StatefulWidget {
   const RecipeDetailScreen({
     super.key,
@@ -85,18 +86,96 @@ class _RecipeDetailScreenState
     setState(() {});
   }
 
+  void _showPremiumVoiceDialog() {
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Row(
+          children: [
+            Icon(Icons.mic, color: Color(0xFFFF7043)),
+            SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                'Modo Voz Premium',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
+          ],
+        ),
+        content: const Text(
+          'Cozinha com as mãos livres usando comandos de voz — '
+          '"Seguinte", "Repete" e "Anterior".\n\n'
+          'Adere ao Plano Premium para desbloquear o Modo Voz completo.',
+          style: TextStyle(height: 1.45),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Agora não'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(
+              backgroundColor: const Color(0xFFFF7043),
+              foregroundColor: Colors.white,
+            ),
+            onPressed: () {
+              Navigator.pop(ctx);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PaywallScreen(
+                    billingService: billingService,
+                  ),
+                ),
+              );
+            },
+            child: const Text('Ver Premium ⭐'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _openHandsFree() async {
+    if (widget.recipe.steps.isEmpty) return;
+
+    try {
+      final status = await appApi.getUserStatus();
+      if (!mounted) return;
+
+      final isPremium =
+          status['is_premium'] == true || status['plan'] == 'premium';
+
+      if (!isPremium) {
+        _showPremiumVoiceDialog();
+        return;
+      }
+    } catch (_) {
+      if (!mounted) return;
+      _showPremiumVoiceDialog();
+      return;
+    }
+
+    if (!mounted) return;
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => HandsFreeScreen(
+          recipe: widget.recipe,
+          autoStartVoice: true,
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       floatingActionButton: widget.recipe.steps.isNotEmpty
           ? FloatingActionButton.extended(
-              onPressed: () => Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (_) =>
-                      HandsFreeScreen(recipe: widget.recipe),
-                ),
-              ),
+              onPressed: _openHandsFree,
               backgroundColor: const Color(0xFFFF7043),
               elevation: 4,
               icon: const Icon(Icons.mic, color: Colors.white),
@@ -111,6 +190,12 @@ class _RecipeDetailScreenState
         title: Text(widget.recipe.title),
 
         actions: [
+          if (widget.recipe.steps.isNotEmpty)
+            IconButton(
+              onPressed: _openHandsFree,
+              icon: const Icon(Icons.volume_up),
+              tooltip: 'Modo Voz',
+            ),
           IconButton(
             onPressed: toggleFavorite,
             icon: Icon(
