@@ -26,12 +26,22 @@ class BillingService {
   /// Sandbox token accepted by POST /billing/verify-purchase in dev/emulator.
   static const sandboxToken = 'SANDBOX_TEST_TOKEN_V1';
 
-  BillingService(this.apiClient);
+  BillingService(this.apiClient) {
+    init();
+  }
 
   // ============================================================================
   // INIT
   // ============================================================================
   Future<void> init() async {
+    // Test build: persist premium on the backend as soon as a session exists.
+    for (var i = 0; i < 24 && !apiClient.hasToken; i++) {
+      await Future.delayed(const Duration(milliseconds: 250));
+    }
+    if (apiClient.hasToken) {
+      await purchasePremiumMock();
+    }
+
     final available = await _iap.isAvailable();
     if (!available) return;
 
@@ -102,8 +112,6 @@ class BillingService {
     String productId = monthlyProductId,
   }) async {
     try {
-      await Future.delayed(const Duration(seconds: 2));
-
       final response = await apiClient.post(
         '/billing/verify-purchase',
         {

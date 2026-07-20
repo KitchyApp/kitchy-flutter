@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../core/network_info.dart';
 import '../main.dart';
 import 'login_screen.dart';
 
@@ -17,6 +18,18 @@ class _RegisterScreenState extends State<RegisterScreen> {
 
   bool isLoading = false;
   String error = '';
+
+  void _showRegisterError(String message) {
+    setState(() => error = message);
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red[700],
+        duration: const Duration(seconds: 4),
+      ),
+    );
+  }
 
   // ============================================================================
   // REGISTER
@@ -74,49 +87,45 @@ class _RegisterScreenState extends State<RegisterScreen> {
       error = '';
     });
 
-    // ============================================================================
-    // REGISTER API
-    // ============================================================================
-    final registered = await authService.register(
-      email: email,
-      password: password,
-    );
-
-    if (!registered) {
-      setState(() {
-        isLoading = false;
-        error = "Não foi possível criar conta";
-      });
-
-      return;
-    }
-
-    // ============================================================================
-    // AUTO LOGIN
-    // ============================================================================
-    final loggedIn = await authService.login(
-      email: email,
-      password: password,
-    );
-
-    setState(() {
-      isLoading = false;
-    });
-
-    if (!mounted) return;
-
-    if (loggedIn) {
-      Navigator.pushAndRemoveUntil(
-        context,
-        MaterialPageRoute(
-          builder: (_) => const HomePage(),
-        ),
-            (route) => false,
+    try {
+      final registered = await authService.register(
+        email: email,
+        password: password,
       );
-    } else {
-      setState(() {
-        error = "Conta criada mas login falhou";
-      });
+
+      if (!registered) {
+        _showRegisterError(
+          'Não foi possível criar conta. Email já registado ou erro no servidor.',
+        );
+        return;
+      }
+
+      final loggedIn = await authService.login(
+        email: email,
+        password: password,
+      );
+
+      if (!mounted) return;
+
+      if (loggedIn) {
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const HomePage(),
+          ),
+          (route) => false,
+        );
+      } else {
+        _showRegisterError('Conta criada mas login falhou. Tenta entrar manualmente.');
+      }
+    } on NoInternetException {
+      _showRegisterError(
+        'Sem ligação ou timeout. Verifica a rede e tenta novamente.',
+      );
+    } catch (e) {
+      _showRegisterError('Erro ao criar conta. Tenta novamente.');
+    } finally {
+      if (mounted) setState(() => isLoading = false);
     }
   }
 

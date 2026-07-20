@@ -417,8 +417,9 @@ class _HomePageState extends State<HomePage> {
   Future<void> takePhoto() async {
     final XFile? photo = await picker.pickImage(
       source: ImageSource.camera,
-      imageQuality: 70,
       maxWidth: 1024,
+      maxHeight: 1024,
+      imageQuality: 80,
     );
 
     if (photo != null) {

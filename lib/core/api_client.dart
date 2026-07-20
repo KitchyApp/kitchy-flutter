@@ -4,7 +4,7 @@ import 'dart:io';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:http/http.dart' as http;
-
+import 'package:image_picker/image_picker.dart';
 import 'network_info.dart';
 
 /// ============================================================================
@@ -210,6 +210,19 @@ class ApiClient {
   // ============================================================================
   // MULTIPART (UPLOAD)
   // ============================================================================
+  // Uses XFile bytes (already downscaled by image_picker via imageQuality /
+  // maxWidth at pick time) and streams them through MultipartFile.fromBytes.
+  Future<http.MultipartFile> _buildUploadFile(String filePath) async {
+    final xFile = XFile(filePath);
+    final bytes = await xFile.readAsBytes();
+
+    return http.MultipartFile.fromBytes(
+      'file',
+      bytes,
+      filename: xFile.name.isNotEmpty ? xFile.name : 'upload.jpg',
+    );
+  }
+
   Future<http.Response> multipart(String endpoint, String filePath) async {
     final uri = Uri.parse('$baseUrl$endpoint');
 
@@ -220,8 +233,7 @@ class ApiClient {
         request.headers['Authorization'] = 'Bearer $accessToken';
       }
 
-      request.files.add(await http.MultipartFile.fromPath('file', filePath));
-
+      request.files.add(await _buildUploadFile(filePath));
       // Image uploads can be large; use a longer timeout.
       final streamed =
           await request.send().timeout(const Duration(seconds: 30));
