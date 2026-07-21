@@ -33,6 +33,10 @@ final BillingService billingService = BillingService(apiClient);
 final AuthService authService = AuthService(apiClient);
 final AppApi appApi = AppApi(apiClient);
 
+/// Global premium flag — set to true after a successful /billing/verify-purchase
+/// so Home and Hands-Free unlock instantly without waiting for a status refetch.
+final ValueNotifier<bool> isPremiumNotifier = ValueNotifier(false);
+
 // ============================================================================
 // MAIN
 // ============================================================================
@@ -239,6 +243,7 @@ class _HomePageState extends State<HomePage> {
       // unexpected type that a "as bool" hard cast would crash on in AOT.
       final bool premium = response['is_premium'] == true;
 
+      isPremiumNotifier.value = premium;
       setState(() => isPremiumUser = premium);
       return response;
     } catch (e, stack) {
@@ -535,8 +540,9 @@ class _HomePageState extends State<HomePage> {
               );
               if (!mounted) return;
               if (upgraded == true) {
+                isPremiumNotifier.value = true;
                 setState(() => isPremiumUser = true);
-                await loadUserStatus();
+                NotificationService().manageAppNotifications(true);
               }
             },
             icon: const Icon(Icons.person),

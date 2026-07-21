@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../main.dart' show appApi, apiClient;
+import '../main.dart' show appApi, apiClient, isPremiumNotifier;
 
 // =============================================================================
 // PROFILE SCREEN
@@ -177,6 +177,8 @@ class _ProfileScreenState extends State<ProfileScreen> {
       );
       if (!mounted) return;
       if (response.statusCode == 200) {
+        // Propagate Premium to the whole app (Home + Modo Voz) immediately.
+        isPremiumNotifier.value = true;
         setState(() {
           _isPremium = true;
         });

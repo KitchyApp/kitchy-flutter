@@ -3,7 +3,7 @@ import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
-import '../main.dart' show appApi, billingService;
+import '../main.dart' show appApi, billingService, isPremiumNotifier;
 import '../models/recipe.dart';
 import 'paywall_screen.dart';
 
@@ -103,12 +103,23 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
   // ============================================================================
 
   Future<void> _loadPlan() async {
+    // Honour an in-session upgrade immediately (e.g. from Profile).
+    if (isPremiumNotifier.value && mounted) {
+      setState(() {
+        _isPremium = true;
+        _planLoaded = true;
+        _statusText =
+            'Toca em "Ativar Modo Voz" para começar a cozinhar com as mãos livres.';
+      });
+    }
+
     try {
       final status = await appApi.getUserStatus();
       if (mounted) {
         setState(() {
-          _isPremium =
-              status['is_premium'] == true || status['plan'] == 'premium';
+          _isPremium = isPremiumNotifier.value ||
+              status['is_premium'] == true ||
+              status['plan'] == 'premium';
           _planLoaded = true;
           _statusText =
               'Toca em "Ativar Modo Voz" para começar a cozinhar com as mãos livres.';
@@ -117,6 +128,7 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
     } catch (_) {
       if (mounted) {
         setState(() {
+          _isPremium = isPremiumNotifier.value;
           _planLoaded = true;
           _statusText =
               'Toca em "Ativar Modo Voz" para começar a cozinhar com as mãos livres.';
@@ -345,11 +357,15 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
       final status = await appApi.getUserStatus();
       if (!mounted) return;
       setState(() {
-        _isPremium =
-            status['is_premium'] == true || status['plan'] == 'premium';
+        _isPremium = isPremiumNotifier.value ||
+            status['is_premium'] == true ||
+            status['plan'] == 'premium';
       });
     } catch (_) {
       // Keep local optimistic state if refresh fails.
+      if (mounted && isPremiumNotifier.value) {
+        setState(() => _isPremium = true);
+      }
     }
   }
 
