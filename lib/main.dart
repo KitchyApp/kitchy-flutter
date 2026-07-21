@@ -526,13 +526,18 @@ class _HomePageState extends State<HomePage> {
             tooltip: 'Desafios',
           ),
           IconButton(
-            onPressed: () {
-              Navigator.push(
+            onPressed: () async {
+              final upgraded = await Navigator.push<bool>(
                 context,
                 MaterialPageRoute(
                   builder: (_) => const ProfileScreen(),
                 ),
               );
+              if (!mounted) return;
+              if (upgraded == true) {
+                setState(() => isPremiumUser = true);
+                await loadUserStatus();
+              }
             },
             icon: const Icon(Icons.person),
             tooltip: 'Perfil',

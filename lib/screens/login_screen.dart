@@ -15,6 +15,7 @@ class _LoginScreenState extends State<LoginScreen> {
   final passwordController = TextEditingController();
 
   bool isLoading = false;
+  bool _obscurePassword = true;
   String error = '';
 
   Future<void> login() async {
@@ -136,10 +137,23 @@ class _LoginScreenState extends State<LoginScreen> {
 
                 TextField(
                   controller: passwordController,
-                  obscureText: true,
+                  obscureText: _obscurePassword,
                   decoration: inputDecoration(
                     label: "Password",
                     icon: Icons.lock,
+                  ).copyWith(
+                    suffixIcon: IconButton(
+                      icon: Icon(
+                        _obscurePassword
+                            ? Icons.visibility
+                            : Icons.visibility_off,
+                      ),
+                      onPressed: () {
+                        setState(() {
+                          _obscurePassword = !_obscurePassword;
+                        });
+                      },
+                    ),
                   ),
                 ),
 

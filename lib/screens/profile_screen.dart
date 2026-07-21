@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../main.dart' show appApi;
+import '../main.dart' show appApi, apiClient;
 
 // =============================================================================
 // PROFILE SCREEN
@@ -165,6 +165,34 @@ class _ProfileScreenState extends State<ProfileScreen> {
     }
   }
 
+  // POST /billing/verify-purchase via ApiClient (Bearer token in headers).
+  Future<void> _subscribePremium() async {
+    try {
+      final response = await apiClient.post(
+        '/billing/verify-purchase',
+        {
+          'purchase_token': 'SANDBOX_TEST_TOKEN_V1',
+          'product_id': 'kitchy_premium_monthly',
+        },
+      );
+      if (!mounted) return;
+      if (response.statusCode == 200) {
+        setState(() {
+          _isPremium = true;
+        });
+        _showSnack('Plano Premium ativado! ⭐');
+        // Return true so HomePage refreshes and unlocks Premium features.
+        Navigator.pop(context, true);
+      } else {
+        _showSnack('Não foi possível ativar o Premium.', error: true);
+      }
+    } catch (e) {
+      debugPrint('[ProfileScreen] Erro ao subscrever Premium: $e');
+      if (!mounted) return;
+      _showSnack('Erro ao ativar Premium. Tenta novamente.', error: true);
+    }
+  }
+
   // ============================================================================
   // HELPERS
   // ============================================================================
@@ -206,6 +234,15 @@ class _ProfileScreenState extends State<ProfileScreen> {
                     email:     _email,
                     isPremium: _isPremium,
                   ),
+
+                  if (!_isPremium) ...[
+                    const SizedBox(height: 16),
+                    ElevatedButton.icon(
+                      onPressed: _subscribePremium,
+                      icon: const Icon(Icons.workspace_premium),
+                      label: const Text('Ativar Premium'),
+                    ),
+                  ],
 
                   const SizedBox(height: 28),
 
