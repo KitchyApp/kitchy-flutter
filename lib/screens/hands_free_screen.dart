@@ -160,9 +160,13 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
     await _tts!.setSpeechRate(0.45);
     await _tts!.setVolume(1.0);
     await _tts!.setPitch(1.05);
+    await _tts!.awaitSpeakCompletion(true);
 
+    // When TTS finishes speaking, immediately reopen the mic for the next command.
     _tts!.setCompletionHandler(() {
-      if (mounted && _voiceActive && !_isListening) _startListening();
+      if (!mounted || !_voiceActive) return;
+      setState(() => _isSpeaking = false);
+      _startListening();
     });
 
     _tts!.setErrorHandler((msg) {
@@ -214,6 +218,14 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
       _pulseCtrl.stop();
       _pulseCtrl.reset();
       setState(() => _isListening = false);
+
+      // Re-open mic after listen timeout (no command). Delay lets a just-matched
+      // command set _isSpeaking=true before we decide to listen again.
+      Future.delayed(const Duration(milliseconds: 400), () {
+        if (mounted && _voiceActive && !_isSpeaking && !_isListening) {
+          _startListening();
+        }
+      });
     }
   }
 
@@ -237,8 +249,7 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
 
     final text = 'Passo ${_currentStep + 1}. ${_steps[_currentStep]}';
     await _tts!.speak(text);
-
-    if (mounted) setState(() => _isSpeaking = false);
+    // _isSpeaking cleared + mic reopened in setCompletionHandler.
   }
 
   // ============================================================================
@@ -246,7 +257,11 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
   // ============================================================================
 
   Future<void> _startListening() async {
-    if (!_voiceActive || !_speechAvailable || _speech == null || !mounted) {
+    if (!_voiceActive ||
+        !_speechAvailable ||
+        _speech == null ||
+        !mounted ||
+        _isSpeaking) {
       return;
     }
     await _speech!.stop();
@@ -264,6 +279,7 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
       pauseFor: const Duration(seconds: 2),
       localeId: 'pt_PT',
       cancelOnError: false,
+      partialResults: false,
     );
   }
 

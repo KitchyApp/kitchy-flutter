@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:share_plus/share_plus.dart';
 
-import '../main.dart' show appApi, billingService;
+import '../main.dart' show appApi, billingService, apiClient;
 import '../models/recipe.dart';
 import '../services/favorites_service.dart';
 import 'hands_free_screen.dart';
@@ -62,28 +62,51 @@ class _RecipeDetailScreenState
     });
   }
 
-  Future<void> toggleFavorite() async {
-    if (isFavorite) {
-      final favorite =
-      await FavoritesService.findFavoriteByTitle(
-        widget.recipe.title,
-      );
+  Future<void> _toggleFavorite() async {
+    final recipe = widget.recipe;
 
-      if (favorite != null &&
-          favorite.favoriteId != null) {
-        await FavoritesService.removeFavorite(
-          favorite.favoriteId!,
+    try {
+      if (isFavorite) {
+        final favorite =
+            await FavoritesService.findFavoriteByTitle(recipe.title);
+
+        if (favorite != null && favorite.favoriteId != null) {
+          final response =
+              await apiClient.delete('/favorites/${favorite.favoriteId}');
+          if (!mounted) return;
+          if (response.statusCode == 200 || response.statusCode == 201) {
+            setState(() => isFavorite = false);
+          }
+        }
+      } else {
+        // Backend route: POST /favorites (recipes favorite endpoint).
+        final response = await apiClient.post(
+          '/favorites',
+          {
+            'recipe_title': recipe.title,
+            'recipe_data': {
+              'title': recipe.title,
+              'calories': recipe.calories,
+              'protein': recipe.protein,
+              'carbs': recipe.carbs,
+              'fat': recipe.fat,
+              'time_minutes': recipe.timeMinutes,
+              'steps': recipe.steps,
+              'optional_ingredients': recipe.optionalIngredients,
+              'vitamins': recipe.vitamins,
+              'is_premium': recipe.isPremium,
+            },
+          },
         );
+
+        if (!mounted) return;
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          setState(() => isFavorite = true);
+        }
       }
-    } else {
-      await FavoritesService.addFavorite(
-        widget.recipe,
-      );
+    } catch (e) {
+      debugPrint('[RecipeDetail] _toggleFavorite error: $e');
     }
-
-    await loadFavoriteStatus();
-
-    setState(() {});
   }
 
   void _showPremiumVoiceDialog() {
@@ -197,7 +220,7 @@ class _RecipeDetailScreenState
               tooltip: 'Modo Voz',
             ),
           IconButton(
-            onPressed: toggleFavorite,
+            onPressed: _toggleFavorite,
             icon: Icon(
               isFavorite
                   ? Icons.favorite
