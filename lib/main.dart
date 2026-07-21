@@ -562,6 +562,7 @@ class _HomePageState extends State<HomePage> {
           IconButton(
             onPressed: () async {
               await authService.logout();
+              isPremiumNotifier.value = false;
 
               if (!mounted) return;
 

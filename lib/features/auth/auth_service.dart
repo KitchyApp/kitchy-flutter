@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../core/api_client.dart';
 
@@ -50,12 +51,12 @@ class AuthService {
       return false;
     }
 
-    final data = jsonDecode(response.body);
+    final data = jsonDecode(response.body) as Map<String, dynamic>;
+    final access = data['access_token'] as String;
+    final refresh = data['refresh_token'] as String;
 
-    await saveTokens(
-      access: data['access_token'],
-      refresh: data['refresh_token'],
-    );
+    // Replace any previous session: persist JWT + update global ApiClient memory.
+    await apiClient.setTokens(access: access, refresh: refresh);
 
     return true;
   }
@@ -143,12 +144,15 @@ class AuthService {
   // ============================================================================
 
   Future<void> logout() async {
+    // Clear AuthService SecureStorage (tokens + any other keys).
     await storage.deleteAll();
 
-    await apiClient.setTokens(
-      access: '',
-      refresh: '',
-    );
+    // Clear ApiClient in-memory tokens + its SecureStorage.
+    await apiClient.clearTokens();
+
+    // Clear SharedPreferences cache (favorites, etc.).
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.clear();
   }
 
   // ============================================================================

@@ -2,7 +2,8 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 
-import '../main.dart' show appApi, apiClient, isPremiumNotifier;
+import '../main.dart' show appApi, apiClient, authService, isPremiumNotifier;
+import 'login_screen.dart';
 
 // =============================================================================
 // PROFILE SCREEN
@@ -193,6 +194,19 @@ class _ProfileScreenState extends State<ProfileScreen> {
       if (!mounted) return;
       _showSnack('Erro ao ativar Premium. Tenta novamente.', error: true);
     }
+  }
+
+  Future<void> _logout() async {
+    await authService.logout();
+    isPremiumNotifier.value = false;
+
+    if (!mounted) return;
+
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginScreen()),
+      (route) => false,
+    );
   }
 
   // ============================================================================
@@ -445,6 +459,21 @@ class _ProfileScreenState extends State<ProfileScreen> {
                         : const Icon(Icons.save_rounded),
                     label: Text(
                       _isSaving ? 'A guardar...' : 'Guardar Preferências',
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  OutlinedButton.icon(
+                    onPressed: _logout,
+                    icon: const Icon(Icons.logout, color: Colors.red),
+                    label: const Text(
+                      'Terminar sessão',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.red),
+                      minimumSize: const Size(double.infinity, 48),
                     ),
                   ),
                 ],

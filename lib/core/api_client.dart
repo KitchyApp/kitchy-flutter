@@ -57,9 +57,13 @@ class ApiClient {
     required String access,
     required String refresh,
   }) async {
+    // Update in-memory tokens immediately so the next HTTP call uses them.
     accessToken = access;
     refreshToken = refresh;
 
+    // Explicitly replace any previous values in SecureStorage.
+    await storage.delete(key: 'access_token');
+    await storage.delete(key: 'refresh_token');
     await storage.write(key: 'access_token', value: access);
     await storage.write(key: 'refresh_token', value: refresh);
   }
@@ -71,8 +75,8 @@ class ApiClient {
     accessToken = null;
     refreshToken = null;
 
-    await storage.delete(key: 'access_token');
-    await storage.delete(key: 'refresh_token');
+    // Wipe every SecureStorage key so no leftover session data survives logout.
+    await storage.deleteAll();
   }
 
   // ============================================================================
