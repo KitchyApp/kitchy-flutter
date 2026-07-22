@@ -62,41 +62,6 @@ class _RecipeDetailScreenState
     });
   }
 
-  Future<void> _toggleFavorite() async {
-    print("A enviar favorito...");
-    final recipe = widget.recipe;
-
-    try {
-      final response = await apiClient.post(
-        '/recipes/favorite',
-        {
-          'recipe_title': recipe.title,
-          'recipe_data': recipe.toJson(),
-        },
-      );
-
-      print(
-        '[RecipeDetail] POST /recipes/favorite → '
-        'HTTP ${response.statusCode} ${response.body}',
-      );
-
-      if (!mounted) return;
-      if (response.statusCode == 200 || response.statusCode == 201) {
-        print("Favorito guardado com sucesso!");
-        setState(() {
-          isFavorite = !isFavorite;
-        });
-      } else {
-        print(
-          '[RecipeDetail] Erro ao guardar favorito: '
-          'HTTP ${response.statusCode} ${response.body}',
-        );
-      }
-    } catch (e) {
-      print('[RecipeDetail] _toggleFavorite error: $e');
-    }
-  }
-
   void _showPremiumVoiceDialog() {
     showDialog(
       context: context,
@@ -208,7 +173,30 @@ class _RecipeDetailScreenState
               tooltip: 'Modo Voz',
             ),
           IconButton(
-            onPressed: _toggleFavorite,
+            onPressed: () async {
+              print('CLIQUE DETECTADO NO CORAÇÃO');
+              try {
+                final response = await apiClient.post(
+                  '/recipes/favorite',
+                  {
+                    'recipe_title': widget.recipe.title,
+                    'recipe_data': widget.recipe.toJson(),
+                  },
+                );
+                print(
+                  'POST /recipes/favorite → HTTP ${response.statusCode} ${response.body}',
+                );
+                if (!mounted) return;
+                if (response.statusCode == 200 || response.statusCode == 201) {
+                  print('Favorito guardado com sucesso!');
+                  setState(() {
+                    isFavorite = !isFavorite;
+                  });
+                }
+              } catch (e) {
+                print('Erro ao enviar favorito: $e');
+              }
+            },
             icon: Icon(
               isFavorite
                   ? Icons.favorite

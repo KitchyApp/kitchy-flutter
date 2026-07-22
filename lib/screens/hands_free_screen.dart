@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
@@ -8,20 +10,13 @@ import '../models/recipe.dart';
 import 'paywall_screen.dart';
 
 // =============================================================================
-// HANDS FREE SCREEN — Cozinha Guiada por Voz
+// HANDS FREE SCREEN — Cozinha Guiada por Voz (Modo Contínuo)
 // =============================================================================
-// Permite navegar pelos passos de uma receita com comandos de voz:
-//   "Seguinte" / "Próximo"  → avança um passo
-//   "Repete"  / "De novo"   → relê o passo atual
-//   "Anterior" / "Volta"    → recua um passo
-//
-// Regra Premium:
-//   - Utilizadores Free     → voz activa até ao passo 3 inclusive.
-//     Ao tentar avançar para o passo 4, surge o BottomSheet de paywall.
-//   - Utilizadores Premium  → fluxo completo sem interrupções.
-//
-// Ciclo de áudio (após "Ativar Modo Voz"):
-//   speak(passo) → onCompletion → startListening → onResult → handleCommand
+// Ciclo: speak(passo) → onCompletion → espera 2s → avança sozinho.
+// Microfone fica em escuta contínua em background para comandos:
+//   "Seguinte" / "Próximo"  → salta imediatamente
+//   "Anterior" / "Voltar"   → recua
+//   "Para" / "Pausa"        → para o TTS
 // =============================================================================
 
 /// Free users may navigate with voice up to (and including) this step index.
@@ -58,6 +53,8 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
   bool _voiceActive = false;
   bool _voiceInitializing = false;
   bool _speechAvailable = false;
+  bool _paused = false;
+  Timer? _autoAdvanceTimer;
 
   // ── UI state ─────────────────────────────────────────────────────────────
   bool _isSpeaking = false;
@@ -92,6 +89,7 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
 
   @override
   void dispose() {
+    _autoAdvanceTimer?.cancel();
     _pulseCtrl.dispose();
     _tts?.stop();
     _speech?.stop();
@@ -162,11 +160,13 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
     await _tts!.setPitch(1.05);
     await _tts!.awaitSpeakCompletion(true);
 
-    // When TTS finishes speaking, immediately reopen the mic for the next command.
+    // Modo Contínuo: ao acabar de ditar, mantém o microfone e avança sozinho
+    // após 2 segundos (comandos de voz podem interromper).
     _tts!.setCompletionHandler(() {
       if (!mounted || !_voiceActive) return;
       setState(() => _isSpeaking = false);
       _startListening();
+      _scheduleAutoAdvance();
     });
 
     _tts!.setErrorHandler((msg) {
@@ -202,9 +202,12 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
     setState(() {
       _voiceActive = true;
       _voiceInitializing = false;
-      _statusText = 'Pronto! Diz "Seguinte", "Repete" ou "Anterior".';
+      _paused = false;
+      _statusText = 'Modo contínuo: avança sozinho. Diz "Seguinte", "Anterior" ou "Pausa".';
     });
 
+    // Mic em background desde o início.
+    await _startListening();
     await _speakCurrentStep();
   }
 
@@ -219,10 +222,9 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
       _pulseCtrl.reset();
       setState(() => _isListening = false);
 
-      // Re-open mic after listen timeout (no command). Delay lets a just-matched
-      // command set _isSpeaking=true before we decide to listen again.
-      Future.delayed(const Duration(milliseconds: 400), () {
-        if (mounted && _voiceActive && !_isSpeaking && !_isListening) {
+      // Escuta contínua em background.
+      Future.delayed(const Duration(milliseconds: 300), () {
+        if (mounted && _voiceActive && !_isListening) {
           _startListening();
         }
       });
@@ -234,22 +236,46 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
   // ============================================================================
 
   Future<void> _speakCurrentStep() async {
-    if (!mounted || !_voiceActive || _tts == null) return;
+    if (!mounted || !_voiceActive || _tts == null || _paused) return;
 
+    _autoAdvanceTimer?.cancel();
     await _tts!.stop();
-    await _speech?.stop();
+    // Não parámos o STT — microfone continua em background.
 
     setState(() {
       _isSpeaking = true;
-      _isListening = false;
       _recognizedText = '';
       _statusText = 'A ler passo ${_currentStep + 1}…';
     });
-    _pulseCtrl.stop();
 
     final text = 'Passo ${_currentStep + 1}. ${_steps[_currentStep]}';
     await _tts!.speak(text);
-    // _isSpeaking cleared + mic reopened in setCompletionHandler.
+  }
+
+  void _scheduleAutoAdvance() {
+    _autoAdvanceTimer?.cancel();
+    if (!_voiceActive || _paused) return;
+
+    _autoAdvanceTimer = Timer(const Duration(seconds: 2), () {
+      if (!mounted || !_voiceActive || _paused || _isSpeaking) return;
+      if (_currentStep >= _steps.length - 1) {
+        setState(() => _statusText = '🎉 Receita concluída!');
+        return;
+      }
+      _nextStep();
+    });
+  }
+
+  void _pauseVoice() {
+    _autoAdvanceTimer?.cancel();
+    _paused = true;
+    _tts?.stop();
+    if (!mounted) return;
+    setState(() {
+      _isSpeaking = false;
+      _statusText = 'Em pausa. Diz "Seguinte" para continuar.';
+    });
+    _startListening();
   }
 
   // ============================================================================
@@ -260,65 +286,68 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
     if (!_voiceActive ||
         !_speechAvailable ||
         _speech == null ||
-        !mounted ||
-        _isSpeaking) {
+        !mounted) {
       return;
     }
-    await _speech!.stop();
+    if (_isListening) return;
 
     setState(() {
       _isListening = true;
       _recognizedText = '';
-      _statusText = 'A ouvir… Diz "Seguinte", "Repete" ou "Anterior"';
+      if (!_isSpeaking && !_paused) {
+        _statusText = 'A ouvir… (modo contínuo)';
+      }
     });
     _pulseCtrl.repeat(reverse: true);
 
     await _speech!.listen(
       onResult: _onSpeechResult,
-      listenFor: const Duration(seconds: 30),
+      listenFor: const Duration(seconds: 60),
       pauseFor: const Duration(seconds: 5),
       localeId: 'pt_PT',
       cancelOnError: false,
       partialResults: true,
-      listenMode: ListenMode.confirmation,
+      listenMode: ListenMode.dictation,
     );
   }
 
   void _onSpeechResult(SpeechRecognitionResult result) {
-    if (!mounted) return;
-    final words = result.recognizedWords;
-    print(
-      '[HandsFree] onResult final=${result.finalResult} words="$words"',
-    );
-    setState(() => _recognizedText = words);
+    if (!mounted || !_voiceActive) return;
+    final raw = result.recognizedWords;
+    final w = _normalizeVoice(raw);
+    print('[HandsFree] onResult final=${result.finalResult} raw="$raw" norm="$w"');
+    setState(() => _recognizedText = raw);
 
-    if (result.finalResult && words.trim().isNotEmpty) {
-      _handleCommand(words);
+    if (w.isEmpty) return;
+
+    // Para / pausa — para o TTS de imediato.
+    if (w.contains('para') || w.contains('pausa')) {
+      _pauseVoice();
+      return;
     }
-  }
 
-  // ============================================================================
-  // COMMAND HANDLER
-  // ============================================================================
-
-  void _handleCommand(String words) {
-    final w = _normalizeVoice(words);
-
-    if (_containsAny(w, ['seguinte', 'proximo', 'avanca'])) {
+    // Seguinte / próximo — salta imediatamente para a frente.
+    if (w.contains('seguinte') || w.contains('proximo')) {
+      _autoAdvanceTimer?.cancel();
+      _paused = false;
       _nextStep();
-    } else if (_containsAny(w, ['repete', 'repetir', 'de novo', 'outra vez', 'outra'])) {
-      _repeatStep();
-    } else if (_containsAny(w, ['anterior', 'volta', 'voltar', 'atras'])) {
+      return;
+    }
+
+    // Anterior / voltar — recua.
+    if (w.contains('anterior') || w.contains('voltar')) {
+      _autoAdvanceTimer?.cancel();
+      _paused = false;
       _previousStep();
-    } else {
-      setState(() => _statusText = 'Não entendi "${words}". Tenta novamente.');
-      _startListening();
+      return;
     }
   }
 
   /// Lowercase + trim + strip accents so "próximo" / "Próximo " match "proximo".
   String _normalizeVoice(String input) {
     var s = input.toLowerCase().trim();
+    // Also collapse inner spaces.
+    s = s.replaceAll(RegExp(r'\s+'), ' ');
     const from = 'áàãâäéèêëíìîïóòõôöúùûüçñ';
     const to = 'aaaaaeeeeiiiiooooouuuucn';
     for (var i = 0; i < from.length; i++) {
@@ -327,17 +356,16 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
     return s;
   }
 
-  bool _containsAny(String text, List<String> keywords) =>
-      keywords.any(text.contains);
-
   // ============================================================================
   // NAVIGATION
   // ============================================================================
 
   void _nextStep() {
+    _autoAdvanceTimer?.cancel();
+    _paused = false;
+
     if (!_isPremium && _currentStep >= _kFreeVoiceLimit) {
       _tts?.stop();
-      _speech?.stop();
       _pulseCtrl.stop();
       setState(() {
         _isListening = false;
@@ -362,6 +390,9 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
   }
 
   void _previousStep() {
+    _autoAdvanceTimer?.cancel();
+    _paused = false;
+
     if (_currentStep > 0) {
       setState(() => _currentStep--);
       if (_voiceActive) {
@@ -370,7 +401,7 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
     } else if (_voiceActive && _tts != null) {
       _tts!.speak('Já estás no primeiro passo.');
       setState(() => _statusText = 'Já estás no passo 1.');
-      Future.delayed(const Duration(seconds: 2), _startListening);
+      _startListening();
     }
   }
 

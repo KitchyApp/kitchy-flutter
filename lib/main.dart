@@ -983,7 +983,23 @@ class _RecipeDetailScreenState extends State<RecipeDetailScreen> {
               tooltip: 'Modo Voz',
             ),
           IconButton(
-            onPressed: () {},
+            onPressed: () async {
+              print('CLIQUE DETECTADO NO CORAÇÃO');
+              try {
+                final response = await apiClient.post(
+                  '/recipes/favorite',
+                  {
+                    'recipe_title': recipe.title,
+                    'recipe_data': recipe.toJson(),
+                  },
+                );
+                print(
+                  'POST /recipes/favorite → HTTP ${response.statusCode} ${response.body}',
+                );
+              } catch (e) {
+                print('Erro ao enviar favorito: $e');
+              }
+            },
             icon: const Icon(Icons.favorite_border),
           ),
 
