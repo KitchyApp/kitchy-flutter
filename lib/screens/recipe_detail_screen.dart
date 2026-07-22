@@ -67,45 +67,51 @@ class _RecipeDetailScreenState
 
     try {
       if (isFavorite) {
-        final favorite =
-            await FavoritesService.findFavoriteByTitle(recipe.title);
+        final id = recipe.favoriteId ??
+            (await FavoritesService.findFavoriteByTitle(recipe.title))
+                ?.favoriteId;
 
-        if (favorite != null && favorite.favoriteId != null) {
-          final response =
-              await apiClient.delete('/favorites/${favorite.favoriteId}');
-          if (!mounted) return;
-          if (response.statusCode == 200 || response.statusCode == 201) {
-            setState(() => isFavorite = false);
-          }
+        if (id == null) {
+          print('[RecipeDetail] Favorito sem ID persistido — não foi possível remover.');
+          return;
+        }
+
+        final response = await apiClient.delete('/favorites/$id');
+        if (!mounted) return;
+        if (response.statusCode == 200 || response.statusCode == 201) {
+          setState(() {
+            isFavorite = !isFavorite;
+          });
+        } else {
+          print(
+            '[RecipeDetail] Erro ao remover favorito: '
+            'HTTP ${response.statusCode} ${response.body}',
+          );
         }
       } else {
-        // Backend route: POST /favorites (recipes favorite endpoint).
+        // Generated recipes have no persisted ID — send the full JSON payload.
         final response = await apiClient.post(
           '/favorites',
           {
             'recipe_title': recipe.title,
-            'recipe_data': {
-              'title': recipe.title,
-              'calories': recipe.calories,
-              'protein': recipe.protein,
-              'carbs': recipe.carbs,
-              'fat': recipe.fat,
-              'time_minutes': recipe.timeMinutes,
-              'steps': recipe.steps,
-              'optional_ingredients': recipe.optionalIngredients,
-              'vitamins': recipe.vitamins,
-              'is_premium': recipe.isPremium,
-            },
+            'recipe_data': recipe.toJson(),
           },
         );
 
         if (!mounted) return;
         if (response.statusCode == 200 || response.statusCode == 201) {
-          setState(() => isFavorite = true);
+          setState(() {
+            isFavorite = !isFavorite;
+          });
+        } else {
+          print(
+            '[RecipeDetail] Erro ao adicionar favorito: '
+            'HTTP ${response.statusCode} ${response.body}',
+          );
         }
       }
     } catch (e) {
-      debugPrint('[RecipeDetail] _toggleFavorite error: $e');
+      print('[RecipeDetail] _toggleFavorite error: $e');
     }
   }
 
