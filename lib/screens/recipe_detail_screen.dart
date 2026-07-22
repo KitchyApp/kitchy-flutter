@@ -63,52 +63,34 @@ class _RecipeDetailScreenState
   }
 
   Future<void> _toggleFavorite() async {
+    print("A enviar favorito...");
     final recipe = widget.recipe;
 
     try {
-      if (isFavorite) {
-        final id = recipe.favoriteId ??
-            (await FavoritesService.findFavoriteByTitle(recipe.title))
-                ?.favoriteId;
+      final response = await apiClient.post(
+        '/recipes/favorite',
+        {
+          'recipe_title': recipe.title,
+          'recipe_data': recipe.toJson(),
+        },
+      );
 
-        if (id == null) {
-          print('[RecipeDetail] Favorito sem ID persistido — não foi possível remover.');
-          return;
-        }
+      print(
+        '[RecipeDetail] POST /recipes/favorite → '
+        'HTTP ${response.statusCode} ${response.body}',
+      );
 
-        final response = await apiClient.delete('/favorites/$id');
-        if (!mounted) return;
-        if (response.statusCode == 200 || response.statusCode == 201) {
-          setState(() {
-            isFavorite = !isFavorite;
-          });
-        } else {
-          print(
-            '[RecipeDetail] Erro ao remover favorito: '
-            'HTTP ${response.statusCode} ${response.body}',
-          );
-        }
+      if (!mounted) return;
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        print("Favorito guardado com sucesso!");
+        setState(() {
+          isFavorite = !isFavorite;
+        });
       } else {
-        // Generated recipes have no persisted ID — send the full JSON payload.
-        final response = await apiClient.post(
-          '/favorites',
-          {
-            'recipe_title': recipe.title,
-            'recipe_data': recipe.toJson(),
-          },
+        print(
+          '[RecipeDetail] Erro ao guardar favorito: '
+          'HTTP ${response.statusCode} ${response.body}',
         );
-
-        if (!mounted) return;
-        if (response.statusCode == 200 || response.statusCode == 201) {
-          setState(() {
-            isFavorite = !isFavorite;
-          });
-        } else {
-          print(
-            '[RecipeDetail] Erro ao adicionar favorito: '
-            'HTTP ${response.statusCode} ${response.body}',
-          );
-        }
       }
     } catch (e) {
       print('[RecipeDetail] _toggleFavorite error: $e');

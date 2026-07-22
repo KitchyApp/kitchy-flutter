@@ -31,10 +31,6 @@ class _LoginScreenState extends State<LoginScreen> {
       password: passwordController.text.trim(),
     );
 
-    setState(() {
-      isLoading = false;
-    });
-
     if (!mounted) return;
 
     if (success) {
@@ -44,11 +40,13 @@ class _LoginScreenState extends State<LoginScreen> {
           builder: (_) => const HomePage(),
         ),
       );
-    } else {
-      setState(() {
-        error = 'Email ou password inválidos';
-      });
+      return;
     }
+
+    setState(() {
+      isLoading = false;
+      error = 'Email ou password inválidos';
+    });
   }
 
   InputDecoration inputDecoration({

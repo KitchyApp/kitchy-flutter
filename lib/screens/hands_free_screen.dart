@@ -275,20 +275,25 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
 
     await _speech!.listen(
       onResult: _onSpeechResult,
-      listenFor: const Duration(seconds: 8),
-      pauseFor: const Duration(seconds: 2),
+      listenFor: const Duration(seconds: 30),
+      pauseFor: const Duration(seconds: 5),
       localeId: 'pt_PT',
       cancelOnError: false,
-      partialResults: false,
+      partialResults: true,
+      listenMode: ListenMode.confirmation,
     );
   }
 
   void _onSpeechResult(SpeechRecognitionResult result) {
     if (!mounted) return;
-    setState(() => _recognizedText = result.recognizedWords);
+    final words = result.recognizedWords;
+    print(
+      '[HandsFree] onResult final=${result.finalResult} words="$words"',
+    );
+    setState(() => _recognizedText = words);
 
-    if (result.finalResult && result.recognizedWords.trim().isNotEmpty) {
-      _handleCommand(result.recognizedWords);
+    if (result.finalResult && words.trim().isNotEmpty) {
+      _handleCommand(words);
     }
   }
 
@@ -297,18 +302,29 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
   // ============================================================================
 
   void _handleCommand(String words) {
-    final w = words.toLowerCase();
+    final w = _normalizeVoice(words);
 
-    if (_containsAny(w, ['seguinte', 'proximo', 'próximo', 'avança', 'avanca'])) {
+    if (_containsAny(w, ['seguinte', 'proximo', 'avanca'])) {
       _nextStep();
     } else if (_containsAny(w, ['repete', 'repetir', 'de novo', 'outra vez', 'outra'])) {
       _repeatStep();
-    } else if (_containsAny(w, ['anterior', 'volta', 'voltar', 'atras', 'atrás'])) {
+    } else if (_containsAny(w, ['anterior', 'volta', 'voltar', 'atras'])) {
       _previousStep();
     } else {
       setState(() => _statusText = 'Não entendi "${words}". Tenta novamente.');
       _startListening();
     }
+  }
+
+  /// Lowercase + trim + strip accents so "próximo" / "Próximo " match "proximo".
+  String _normalizeVoice(String input) {
+    var s = input.toLowerCase().trim();
+    const from = 'áàãâäéèêëíìîïóòõôöúùûüçñ';
+    const to = 'aaaaaeeeeiiiiooooouuuucn';
+    for (var i = 0; i < from.length; i++) {
+      s = s.replaceAll(from[i], to[i]);
+    }
+    return s;
   }
 
   bool _containsAny(String text, List<String> keywords) =>
