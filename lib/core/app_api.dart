@@ -121,8 +121,15 @@ class AppApi {
   //
   // Throws [DailyLimitExceededException] on 403 so the caller can show
   // the Premium upgrade dialog without inspecting raw status codes.
-  Future<Map<String, dynamic>> uploadImage(String path) async {
-    final response = await client.multipart('/analyze-image/', path);
+  Future<Map<String, dynamic>> uploadImage(
+    String path, {
+    bool isBarman = false,
+  }) async {
+    final response = await client.multipart(
+      '/analyze-image/',
+      path,
+      fields: {'is_barman': isBarman.toString()},
+    );
 
     if (response.statusCode == 200) {
       return jsonDecode(response.body);

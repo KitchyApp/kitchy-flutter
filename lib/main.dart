@@ -174,6 +174,12 @@ class _HomePageState extends State<HomePage> {
 
   bool isLoading = false;
   String loadingMessage = "A analisar ingredientes...";
+  bool isBarmanMode = false;
+
+  static const Color _culinaryAccent = Color(0xFFFF7043);
+  static const Color _barmanAccent = Color(0xFFB388FF);
+
+  Color get _accent => isBarmanMode ? _barmanAccent : _culinaryAccent;
 
   // ============================================================================
   // INIT / DISPOSE
@@ -456,7 +462,7 @@ class _HomePageState extends State<HomePage> {
     _startLoadingAnimation();
 
     try {
-      final data = await appApi.uploadImage(path);
+      final data = await appApi.uploadImage(path, isBarman: isBarmanMode);
 
       if (!mounted) return;
 
@@ -516,7 +522,9 @@ class _HomePageState extends State<HomePage> {
       resizeToAvoidBottomInset: true,
 
       appBar: AppBar(
-        title: const Text("Kitchy"),
+        title: Text(isBarmanMode ? "Kitchy Barman" : "Kitchy"),
+        backgroundColor: _accent,
+        foregroundColor: Colors.white,
         actions: [
           IconButton(
             onPressed: () {
@@ -610,6 +618,50 @@ class _HomePageState extends State<HomePage> {
                   ),
           ),
 
+          // ── Mode selector: Culinária | Barman ─────────────────────────────
+          Padding(
+            padding: const EdgeInsets.fromLTRB(20, 12, 20, 0),
+            child: Center(
+              child: ToggleButtons(
+                isSelected: [!isBarmanMode, isBarmanMode],
+                borderRadius: BorderRadius.circular(28),
+                constraints: const BoxConstraints(minHeight: 44, minWidth: 140),
+                selectedColor: Colors.white,
+                fillColor: _accent,
+                color: _accent,
+                borderColor: _accent.withValues(alpha: 0.45),
+                selectedBorderColor: _accent,
+                onPressed: (index) {
+                  setState(() => isBarmanMode = index == 1);
+                },
+                children: const [
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 12),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.restaurant, size: 20),
+                        SizedBox(width: 8),
+                        Text('Culinária'),
+                      ],
+                    ),
+                  ),
+                  Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 12),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.local_bar, size: 20),
+                        SizedBox(width: 8),
+                        Text('Barman'),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+
           // ── Main content ─────────────────────────────────────────────────
           Expanded(
             child: Stack(
@@ -661,21 +713,30 @@ class _HomePageState extends State<HomePage> {
                     decoration: InputDecoration(
                       filled: true,
                       fillColor: Colors.white,
-                      hintText: "Ex: ovos, tomate, queijo",
-                      labelText: "Que ingredientes tens em casa?",
+                      hintText: isBarmanMode
+                          ? "Ex: gin, limão, hortelã"
+                          : "Ex: ovos, tomate, queijo",
+                      labelText: isBarmanMode
+                          ? "Que bebidas e ingredientes tens?"
+                          : "Que ingredientes tens em casa?",
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(18),
                         borderSide: BorderSide.none,
                       ),
                       focusedBorder: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(18),
-                        borderSide: const BorderSide(
-                          color: Color(0xFFFF7043),
+                        borderSide: BorderSide(
+                          color: _accent,
                           width: 2,
                         ),
                       ),
                       contentPadding: const EdgeInsets.all(20),
-                      prefixIcon: const Icon(Icons.restaurant_menu),
+                      prefixIcon: Icon(
+                        isBarmanMode
+                            ? Icons.local_bar
+                            : Icons.restaurant_menu,
+                        color: _accent,
+                      ),
                     ),
                   ),
 

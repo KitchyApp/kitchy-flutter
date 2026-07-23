@@ -227,7 +227,11 @@ class ApiClient {
     );
   }
 
-  Future<http.Response> multipart(String endpoint, String filePath) async {
+  Future<http.Response> multipart(
+    String endpoint,
+    String filePath, {
+    Map<String, String>? fields,
+  }) async {
     final uri = Uri.parse('$baseUrl$endpoint');
 
     try {
@@ -235,6 +239,10 @@ class ApiClient {
 
       if (accessToken != null && accessToken!.isNotEmpty) {
         request.headers['Authorization'] = 'Bearer $accessToken';
+      }
+
+      if (fields != null) {
+        request.fields.addAll(fields);
       }
 
       request.files.add(await _buildUploadFile(filePath));
