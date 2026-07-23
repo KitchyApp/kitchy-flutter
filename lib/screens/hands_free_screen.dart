@@ -160,13 +160,16 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
     await _tts!.setPitch(1.05);
     await _tts!.awaitSpeakCompletion(true);
 
-    // Modo Contínuo: ao acabar de ditar, mantém o microfone e avança sozinho
-    // após 2 segundos (comandos de voz podem interromper).
+    // Escuta APENAS quando o TTS terminar — evita o microfone ouvir a própria app.
     _tts!.setCompletionHandler(() {
-      if (!mounted || !_voiceActive) return;
+      if (!mounted || !_voiceActive || _paused) return;
       setState(() => _isSpeaking = false);
-      _startListening();
-      _scheduleAutoAdvance();
+      // Breve pausa para o eco do altifalante dissipar antes de abrir o mic.
+      Future.delayed(const Duration(milliseconds: 400), () {
+        if (!mounted || !_voiceActive || _isSpeaking || _paused) return;
+        _startListening();
+        _scheduleAutoAdvance();
+      });
     });
 
     _tts!.setErrorHandler((msg) {
@@ -185,6 +188,8 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
           });
         }
       },
+      // Mitiga comportamentos problemáticos do recognizer no Android.
+      options: [SpeechToText.androidAlwaysUseStop],
     );
 
     if (!mounted) return;
@@ -203,11 +208,10 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
       _voiceActive = true;
       _voiceInitializing = false;
       _paused = false;
-      _statusText = 'Modo contínuo: avança sozinho. Diz "Seguinte", "Anterior" ou "Pausa".';
+      _statusText = 'Modo contínuo: avança sozinho. Diz "Seguinte" ou "Próximo".';
     });
 
-    // Mic em background desde o início.
-    await _startListening();
+    // Começa a ditar — o mic só abre no setCompletionHandler.
     await _speakCurrentStep();
   }
 
@@ -217,14 +221,20 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
 
   void _onSpeechStatus(String status) {
     if (!mounted) return;
+    // Nunca reabrir o mic enquanto o TTS está a falar.
+    if (_isSpeaking) return;
+
     if (status == 'done' || status == 'notListening') {
       _pulseCtrl.stop();
       _pulseCtrl.reset();
       setState(() => _isListening = false);
 
-      // Escuta contínua em background.
       Future.delayed(const Duration(milliseconds: 300), () {
-        if (mounted && _voiceActive && !_isListening) {
+        if (mounted &&
+            _voiceActive &&
+            !_isSpeaking &&
+            !_isListening &&
+            !_paused) {
           _startListening();
         }
       });
@@ -239,14 +249,17 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
     if (!mounted || !_voiceActive || _tts == null || _paused) return;
 
     _autoAdvanceTimer?.cancel();
-    await _tts!.stop();
-    // Não parámos o STT — microfone continua em background.
+
+    // Isolamento absoluto: microfone OFF antes de qualquer áudio da app.
+    await _speech?.stop();
 
     setState(() {
       _isSpeaking = true;
+      _isListening = false;
       _recognizedText = '';
       _statusText = 'A ler passo ${_currentStep + 1}…';
     });
+    _pulseCtrl.stop();
 
     final text = 'Passo ${_currentStep + 1}. ${_steps[_currentStep]}';
     await _tts!.speak(text);
@@ -286,7 +299,8 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
     if (!_voiceActive ||
         !_speechAvailable ||
         _speech == null ||
-        !mounted) {
+        !mounted ||
+        _isSpeaking) {
       return;
     }
     if (_isListening) return;
@@ -294,39 +308,46 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
     setState(() {
       _isListening = true;
       _recognizedText = '';
-      if (!_isSpeaking && !_paused) {
-        _statusText = 'A ouvir… (modo contínuo)';
+      if (!_paused) {
+        _statusText = 'A ouvir… Diz "Seguinte" ou "Próximo"';
       }
     });
     _pulseCtrl.repeat(reverse: true);
 
     await _speech!.listen(
       onResult: _onSpeechResult,
-      listenFor: const Duration(seconds: 60),
-      pauseFor: const Duration(seconds: 5),
       localeId: 'pt_PT',
-      cancelOnError: false,
-      partialResults: true,
-      listenMode: ListenMode.dictation,
+      listenOptions: SpeechListenOptions(
+        cancelOnError: false,
+        partialResults: false,
+        listenMode: ListenMode.confirmation,
+        // Evita feedback háptico que interfere com o microfone.
+        enableHapticFeedback: false,
+        listenFor: const Duration(seconds: 30),
+        pauseFor: const Duration(seconds: 3),
+      ),
     );
   }
 
   void _onSpeechResult(SpeechRecognitionResult result) {
-    if (!mounted || !_voiceActive) return;
-    final raw = result.recognizedWords;
-    final w = _normalizeVoice(raw);
-    print('[HandsFree] onResult final=${result.finalResult} raw="$raw" norm="$w"');
-    setState(() => _recognizedText = raw);
+    // Ignorar qualquer eco residual capturado durante/logo após o TTS.
+    if (!mounted || !_voiceActive || _isSpeaking) return;
+
+    final w = result.recognizedWords
+        .trim()
+        .toLowerCase()
+        .replaceAll('ó', 'o')
+        .replaceAll('á', 'a');
+    print('[HandsFree] onResult words="$w"');
+    setState(() => _recognizedText = w);
 
     if (w.isEmpty) return;
 
-    // Para / pausa — para o TTS de imediato.
     if (w.contains('para') || w.contains('pausa')) {
       _pauseVoice();
       return;
     }
 
-    // Seguinte / próximo — salta imediatamente para a frente.
     if (w.contains('seguinte') || w.contains('proximo')) {
       _autoAdvanceTimer?.cancel();
       _paused = false;
@@ -334,26 +355,12 @@ class _HandsFreeScreenState extends State<HandsFreeScreen>
       return;
     }
 
-    // Anterior / voltar — recua.
     if (w.contains('anterior') || w.contains('voltar')) {
       _autoAdvanceTimer?.cancel();
       _paused = false;
       _previousStep();
       return;
     }
-  }
-
-  /// Lowercase + trim + strip accents so "próximo" / "Próximo " match "proximo".
-  String _normalizeVoice(String input) {
-    var s = input.toLowerCase().trim();
-    // Also collapse inner spaces.
-    s = s.replaceAll(RegExp(r'\s+'), ' ');
-    const from = 'áàãâäéèêëíìîïóòõôöúùûüçñ';
-    const to = 'aaaaaeeeeiiiiooooouuuucn';
-    for (var i = 0; i < from.length; i++) {
-      s = s.replaceAll(from[i], to[i]);
-    }
-    return s;
   }
 
   // ============================================================================

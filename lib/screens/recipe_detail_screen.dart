@@ -172,35 +172,31 @@ class _RecipeDetailScreenState
               icon: const Icon(Icons.volume_up),
               tooltip: 'Modo Voz',
             ),
-          IconButton(
-            onPressed: () async {
-              print('CLIQUE DETECTADO NO CORAÇÃO');
+          GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: () async {
+              print('TOQUE REAL NO CORAÇÃO DETECTADO');
+              setState(() {
+                isFavorite = true;
+              });
               try {
-                final response = await apiClient.post(
+                await apiClient.post(
                   '/recipes/favorite',
                   {
                     'recipe_title': widget.recipe.title,
                     'recipe_data': widget.recipe.toJson(),
                   },
                 );
-                print(
-                  'POST /recipes/favorite → HTTP ${response.statusCode} ${response.body}',
-                );
-                if (!mounted) return;
-                if (response.statusCode == 200 || response.statusCode == 201) {
-                  print('Favorito guardado com sucesso!');
-                  setState(() {
-                    isFavorite = !isFavorite;
-                  });
-                }
               } catch (e) {
                 print('Erro ao enviar favorito: $e');
               }
             },
-            icon: Icon(
-              isFavorite
-                  ? Icons.favorite
-                  : Icons.favorite_border,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: Icon(
+                isFavorite ? Icons.favorite : Icons.favorite_border,
+                color: isFavorite ? Colors.red : null,
+              ),
             ),
           ),
           IconButton(
