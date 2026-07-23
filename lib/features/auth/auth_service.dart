@@ -39,13 +39,15 @@ class AuthService {
     required String email,
     required String password,
   }) async {
-    final response = await apiClient.post(
-      '/auth/login',
-      {
-        'email': email,
-        'password': password,
-      },
-    );
+    final response = await apiClient
+        .post(
+          '/auth/login',
+          {
+            'email': email,
+            'password': password,
+          },
+        )
+        .timeout(const Duration(seconds: 5));
 
     if (response.statusCode != 200) {
       return false;
@@ -55,8 +57,18 @@ class AuthService {
     final access = data['access_token'] as String;
     final refresh = data['refresh_token'] as String;
 
-    // Replace any previous session: persist JWT + update global ApiClient memory.
-    await apiClient.setTokens(access: access, refresh: refresh);
+    // Memory first — next HTTP calls work even if SecureStorage is slow.
+    apiClient.accessToken = access;
+    apiClient.refreshToken = refresh;
+
+    // Isolated: never block login navigation on storage / cache issues.
+    try {
+      await storage.write(key: 'access_token', value: access);
+      await storage.write(key: 'refresh_token', value: refresh);
+    } catch (e) {
+      // ignore: avoid_print
+      print('[AuthService] Falha ao persistir tokens (não bloqueia login): $e');
+    }
 
     return true;
   }

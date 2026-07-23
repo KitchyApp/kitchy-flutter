@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 
 import '../main.dart';
@@ -26,27 +28,55 @@ class _LoginScreenState extends State<LoginScreen> {
       error = '';
     });
 
-    final success = await authService.login(
-      email: emailController.text.trim(),
-      password: passwordController.text.trim(),
-    );
+    try {
+      final success = await authService.login(
+        email: emailController.text.trim(),
+        password: passwordController.text.trim(),
+      );
 
-    if (!mounted) return;
+      if (!mounted) return;
 
-    if (success) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => const HomePage(),
+      if (success) {
+        // Navigate immediately — no secondary sync before Home.
+        Navigator.pushReplacement(
+          context,
+          MaterialPageRoute(
+            builder: (_) => const HomePage(),
+          ),
+        );
+        return;
+      }
+
+      setState(() {
+        isLoading = false;
+        error = 'Email ou password inválidos';
+      });
+    } on TimeoutException {
+      if (!mounted) return;
+      setState(() => isLoading = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text(
+            'O servidor demorou demasiado a responder. '
+            'Tenta novamente — pode estar a acordar.',
+          ),
+          backgroundColor: Colors.red,
+          duration: Duration(seconds: 4),
         ),
       );
-      return;
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        isLoading = false;
+        error = 'Erro de ligação. Tenta novamente.';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Falha no login: $e'),
+          backgroundColor: Colors.red,
+        ),
+      );
     }
-
-    setState(() {
-      isLoading = false;
-      error = 'Email ou password inválidos';
-    });
   }
 
   InputDecoration inputDecoration({
